@@ -1,7 +1,10 @@
 ﻿#include <iostream>
+#include <string>
+#include <mutex>
+#include <unordered_map>
+
 #include <winsock2.h>
 #include <WS2tcpip.h>
-#include <string>
 #pragma comment(lib, "Ws2_32.lib")
 
 class Server {
@@ -16,22 +19,40 @@ public:
     }
 
     int listenForConns() {
-        if (listen(serverSocket, 1) == SOCKET_ERROR) {
+        std::cout << "LISTENING\n";
+        auto listenVal = listen(serverSocket, SOMAXCONN);
+        if (listenVal == SOCKET_ERROR) {
             return handleError("[LISTENING ERROR]");
         }
-        addNewConn();
-        return listenForConns();   
+        while (true) {
+            auto connSocket = accept(serverSocket, nullptr, nullptr);
+            if (connSocket == INVALID_SOCKET) {
+                closesocket(connSocket);
+                return handleError("[CONNECTION REFUSED]");
+            }
+            std::thread connThread{&Server::handleConnection, this, connSocket};
+            std::thread::id id = connThread.get_id();
+            connMap.emplace(id, Connection{ std::move(connThread), connSocket });
+            finishExpiredThreads();
+            
+        }
+        return 0;
     }
 
 private:
-    int addNewConn() {
-        SOCKET connSocket = accept(serverSocket, nullptr, nullptr);
-        if (connSocket == INVALID_SOCKET) {
-            closesocket(connSocket);
-            return handleError("[CONNECTION REFUSED]");
+    void finishExpiredThreads() {
+        std::scoped_lock lock{expThreadsLock};
+        for (const auto& expThreadId : expiredThreads) {
+            auto connMapEntry = connMap.find(expThreadId);
+            if (connMapEntry == connMap.end()) {
+                continue;
+            }
+            if (connMapEntry->second.thread.joinable()) {
+                connMapEntry->second.thread.join();
+            }
+            connMap.erase(connMapEntry);
         }
-        handleConnection(connSocket);
-        return 0;
+        expiredThreads.clear();
     }
 
     int handleError(std::string&& prefix) {
@@ -41,12 +62,14 @@ private:
         return -1;
     }
 
-    void shutdownConn(SOCKET& connSocket) {
+    void shutdownConn(SOCKET connSocket) {
         int shutDownResult = shutdown(connSocket, SD_SEND);
         closesocket(connSocket);
+        std::scoped_lock lock{expThreadsLock};
+        expiredThreads.push_back(std::this_thread::get_id());
     }
 
-    int handleConnection(SOCKET& connSocket) {
+    int handleConnection(SOCKET connSocket) {
         char recvBuffer[200];
         int recvByteCount = 0;
         do {
@@ -56,7 +79,6 @@ private:
                 int sendByteCount = send(connSocket, recvBuffer, 200, 0);
                 if (sendByteCount == SOCKET_ERROR) {
                     shutdownConn(connSocket);
-                    handleError("[SEND ERROR]");
                 }
             }
             else if (recvByteCount == 0){
@@ -65,7 +87,6 @@ private:
             }
             else {
                 shutdownConn(connSocket);
-                handleError("[RECV ERROR]");
             }
         } while (recvByteCount > 0);
         return 0;
@@ -105,11 +126,19 @@ private:
         return 0;
     }
 
-    std::string ipAddress;
-    int port;
+    struct Connection {
+        std::thread thread;
+        SOCKET socket;
+    };
+    std::unordered_map<std::thread::id, Connection> connMap;
+    std::vector<std::thread::id> expiredThreads;
+    std::mutex expThreadsLock;
 
     SOCKET serverSocket = INVALID_SOCKET;
     sockaddr_in service;
+
+    std::string ipAddress;
+    int port;
 };
 
 int main()
