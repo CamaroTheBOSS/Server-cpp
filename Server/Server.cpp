@@ -2,6 +2,7 @@
 #include <string>
 #include <mutex>
 #include <unordered_map>
+#include <future>
 
 #include <winsock2.h>
 #include <WS2tcpip.h>
@@ -10,9 +11,10 @@
 class Server {
 
 public:
-    Server(std::string&& ipAddress, const int port):
+    Server(std::string&& ipAddress, const int port, const int threadPoolSize):
         ipAddress(std::move(ipAddress)),
-        port(port) {
+        port(port),
+        threadPoolSize(threadPoolSize) {
         initWSA();
         openServerSocket();
         bindServerSocket();
@@ -22,73 +24,133 @@ public:
         std::cout << "LISTENING\n";
         auto listenVal = listen(serverSocket, SOMAXCONN);
         if (listenVal == SOCKET_ERROR) {
-            return handleError("[LISTENING ERROR]");
+            logError("[LISTENING ERROR]");
+            closesocket(serverSocket);
+            WSACleanup();
         }
+        initThreadPool();
+        int workerIndex = 0;
         while (true) {
-            auto connSocket = accept(serverSocket, nullptr, nullptr);
-            if (connSocket == INVALID_SOCKET) {
-                closesocket(connSocket);
-                return handleError("[CONNECTION REFUSED]");
+            // Accept incoming connection
+            auto newConnection = accept(serverSocket, nullptr, nullptr);
+            if (newConnection == INVALID_SOCKET) {
+                logError("[CONNECTION REFUSED]");
+                closesocket(newConnection);
+                closesocket(serverSocket);
+                WSACleanup();
+                return -1;
             }
-            std::thread connThread{&Server::handleConnection, this, connSocket};
-            std::thread::id id = connThread.get_id();
-            connMap.emplace(id, Connection{ std::move(connThread), connSocket });
-            finishExpiredThreads();
-            
+            // Assign connection to the next thread and notify it
+            std::scoped_lock lock(threadPoolLock);
+            auto threadInfo = threadPool.begin() + workerIndex;
+            FD_SET(newConnection, &threadInfo->connectionSet);
+            workerIndex = (workerIndex + 1) % threadPoolSize;
+            int sendByteCount = send(threadInfo->notifier, "", 1, 0);
+            if (sendByteCount == SOCKET_ERROR) {
+                logError("[NOTIFY ERROR]");
+            }   
         }
         return 0;
     }
 
 private:
-    void finishExpiredThreads() {
-        std::scoped_lock lock{expThreadsLock};
-        for (const auto& expThreadId : expiredThreads) {
-            auto connMapEntry = connMap.find(expThreadId);
-            if (connMapEntry == connMap.end()) {
+    void initThreadPool() {
+        // Start specified number of workers
+        std::scoped_lock lock{threadPoolLock};
+        for (int i = 0; i < threadPoolSize; i++) {
+            std::thread worker{&Server::handleConnections, this, i};
+            auto notifier = accept(serverSocket, nullptr, nullptr);
+            if (notifier == INVALID_SOCKET) {
+                closesocket(notifier);
+                logError("[NOTIFY ERROR]");
                 continue;
             }
-            if (connMapEntry->second.thread.joinable()) {
-                connMapEntry->second.thread.join();
-            }
-            connMap.erase(connMapEntry);
+            fd_set workerConnections;
+            FD_ZERO(&workerConnections);
+            threadPool.emplace_back(ThreadConns{ std::move(worker), std::move(workerConnections) });
+            threadPool[threadPool.size() - 1].notifier = notifier;
         }
-        expiredThreads.clear();
+        std::cout << "Started " << std::to_string(threadPool.size()) << " workers\n";
     }
 
-    int handleError(std::string&& prefix) {
+    void logError(std::string&& prefix) {
         std::cout << prefix << ' ' << WSAGetLastError() << '\n';
-        closesocket(serverSocket);
-        WSACleanup();
-        return -1;
     }
 
-    void shutdownConn(SOCKET connSocket) {
-        int shutDownResult = shutdown(connSocket, SD_SEND);
-        closesocket(connSocket);
-        std::scoped_lock lock{expThreadsLock};
-        expiredThreads.push_back(std::this_thread::get_id());
+    void shutdownConn(const SOCKET connection, const int threadIdx) {
+        // Shutdown connection and remove it from FD_SET
+        int shutDownResult = shutdown(connection, SD_SEND);
+        closesocket(connection);
+        std::scoped_lock lock{threadPoolLock};
+        auto threadInfo = threadPool.begin() + threadIdx;
+        FD_CLR(connection, &threadInfo->connectionSet);
     }
 
-    int handleConnection(SOCKET connSocket) {
-        char recvBuffer[200];
-        int recvByteCount = 0;
-        do {
-            recvByteCount = recv(connSocket, recvBuffer, 200, 0);
-            if (recvByteCount > 0) {
-                std::cout << recvBuffer << "\n";
-                int sendByteCount = send(connSocket, recvBuffer, 200, 0);
-                if (sendByteCount == SOCKET_ERROR) {
-                    shutdownConn(connSocket);
+    int handleConnections(const int threadIdx) {
+        // Create socket for communication with master
+        SOCKET masterListener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (masterListener == INVALID_SOCKET) {
+            logError("[WORKER SOCKET OPENING ERROR]");
+            closesocket(masterListener);
+            return 0;
+        }
+
+        // Connect to master
+        sockaddr_in service;
+        service.sin_family = AF_INET;
+        std::wstring stemp{ipAddress.begin(), ipAddress.end()};
+        InetPton(AF_INET, stemp.c_str(), &service.sin_addr.s_addr);
+        service.sin_port = htons(port);
+        if (connect(masterListener, reinterpret_cast<SOCKADDR*>(&service), sizeof(service)) == SOCKET_ERROR) {
+            logError("[MASTER CONNECTION ERROR]");
+            return -1;
+        }
+
+        // Master communication channel must be added to FD_SET to make select() sensitive for incoming data from master
+        {
+            std::scoped_lock lock{threadPoolLock};
+            auto threadInfo = threadPool.begin() + threadIdx;
+            FD_SET(masterListener, &threadInfo->connectionSet);
+        }
+        while (true) {
+            // Copy FD_SET and then select
+            FD_SET observedConnections;
+            {
+                std::scoped_lock lock{threadPoolLock};
+                auto threadInfo = threadPool.begin() + threadIdx;
+                observedConnections = threadInfo->connectionSet;
+            }
+            if (observedConnections.fd_count == 0) {
+                continue;
+            }
+            int socketCount = select(0, &observedConnections, nullptr, nullptr, nullptr);
+            if (socketCount < 0) {
+                logError("[SELECT ERROR]");
+                continue;
+            }
+            for (int i = 0; i < socketCount; i++) {
+                SOCKET client = observedConnections.fd_array[i];
+                char recvBuffer[200];
+                int recvByteCount = 0;
+                recvByteCount = recv(client, recvBuffer, 200, 0);
+                if (recvByteCount > 0) {
+                    std::cout << recvBuffer << "\n";
+                    int sendByteCount = send(client, recvBuffer, 200, 0);
+                    if (sendByteCount == SOCKET_ERROR) {
+                        logError("[SEND ERROR]");
+                        shutdownConn(client, threadIdx);
+                    }
+                }
+                else if (recvByteCount == 0) {
+                    std::cout << "Closing connection\n";
+                    shutdownConn(client, threadIdx);
+                }
+                else {
+                    logError("[RECV ERROR]");
+                    shutdownConn(client, threadIdx);
                 }
             }
-            else if (recvByteCount == 0){
-                std::cout << "Closing connection\n";
-                shutdownConn(connSocket);
-            }
-            else {
-                shutdownConn(connSocket);
-            }
-        } while (recvByteCount > 0);
+        }
         return 0;
     }
 
@@ -98,11 +160,8 @@ private:
         WORD wVersionRequested = MAKEWORD(2, 2);
         wsaError = WSAStartup(wVersionRequested, &wsaData);
         if (wsaError) {
-            std::cout << "[ERROR:" + std::to_string(wsaError) + "] Error on WSAStartup.\n";
+            std::cout << "[WSA STARTUP ERROR] " << std::to_string(wsaError) << '\n';
             return -1;
-        }
-        else {
-            std::cout << "Winsock properly started. Status " << wsaData.szSystemStatus << "\n";
         }
         return 0;
     }
@@ -110,7 +169,8 @@ private:
     int openServerSocket() {
         serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (serverSocket == INVALID_SOCKET) {
-            return handleError("[SOCKET OPENING ERROR]");
+            logError("[LISTEN SOCKET OPENING ERROR]");
+            return -1;
         }
         return 0;
     }
@@ -121,28 +181,29 @@ private:
         InetPton(AF_INET, stemp.c_str(), &service.sin_addr.s_addr);
         service.sin_port = htons(port);
         if (bind(serverSocket, reinterpret_cast<SOCKADDR*>(&service), sizeof(service)) == SOCKET_ERROR) {
-            return handleError("[SOCKET BINDING ERROR]");
+            logError("[LISTEN SOCKET BINDING ERROR]");
+            return -1;
         }
         return 0;
     }
-
-    struct Connection {
+    struct ThreadConns {
         std::thread thread;
-        SOCKET socket;
+        FD_SET connectionSet;
+        SOCKET notifier;
     };
-    std::unordered_map<std::thread::id, Connection> connMap;
-    std::vector<std::thread::id> expiredThreads;
-    std::mutex expThreadsLock;
+    std::vector<ThreadConns> threadPool;
+    std::mutex threadPoolLock;
 
     SOCKET serverSocket = INVALID_SOCKET;
     sockaddr_in service;
 
     std::string ipAddress;
     int port;
+    int threadPoolSize;
 };
 
 int main()
 {
-    Server server{ "127.0.0.1", 8081 };
+    Server server{ "127.0.0.1", 8081, 2 };
     server.listenForConns();
 }
