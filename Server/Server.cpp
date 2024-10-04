@@ -2,7 +2,6 @@
 #include <string>
 #include <mutex>
 #include <unordered_map>
-#include <future>
 
 #include <winsock2.h>
 #include <WS2tcpip.h>
@@ -204,6 +203,6 @@ private:
 
 int main()
 {
-    Server server{ "127.0.0.1", 8081, 2 };
+    Server server{ "192.168.1.10", 8081, 10 };
     server.listenForConns();
 }
