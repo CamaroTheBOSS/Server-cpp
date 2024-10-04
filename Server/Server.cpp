@@ -48,6 +48,7 @@ public:
             if (sendByteCount == SOCKET_ERROR) {
                 logError("[NOTIFY ERROR]");
             }   
+            std::cout << "New connection arrived\n";
         }
         return 0;
     }
@@ -83,6 +84,19 @@ private:
         std::scoped_lock lock{threadPoolLock};
         auto threadInfo = threadPool.begin() + threadIdx;
         FD_CLR(connection, &threadInfo->connectionSet);
+    }
+
+    void broadcastMessage(std::string& msg) {
+        std::scoped_lock lock{threadPoolLock};
+        for (const auto& threadInfo : threadPool) {
+            for (int i = 0; i < threadInfo.connectionSet.fd_count; i++) {
+                SOCKET client = threadInfo.connectionSet.fd_array[i];
+                int sendByteCount = send(client, msg.c_str(), msg.size() + 1, 0);
+                if (sendByteCount == SOCKET_ERROR) {
+                    logError("[SEND ERROR]");
+                }
+            }
+        }
     }
 
     int handleConnections(const int threadIdx) {
@@ -129,16 +143,13 @@ private:
             }
             for (int i = 0; i < socketCount; i++) {
                 SOCKET client = observedConnections.fd_array[i];
-                char recvBuffer[200];
+                char recvBuffer[4096];
                 int recvByteCount = 0;
-                recvByteCount = recv(client, recvBuffer, 200, 0);
+                recvByteCount = recv(client, recvBuffer, 4096, 0);
                 if (recvByteCount > 0) {
-                    std::cout << recvBuffer << "\n";
-                    int sendByteCount = send(client, recvBuffer, 200, 0);
-                    if (sendByteCount == SOCKET_ERROR) {
-                        logError("[SEND ERROR]");
-                        shutdownConn(client, threadIdx);
-                    }
+                    std::string msg{recvBuffer};
+                    broadcastMessage(msg);
+                    //send(client, msg.c_str(), msg.size() + 1, 0);
                 }
                 else if (recvByteCount == 0) {
                     std::cout << "Closing connection\n";

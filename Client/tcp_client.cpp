@@ -1,10 +1,12 @@
 #include "tcp_client.h"
 #include <WS2tcpip.h>
 #include <iostream>
+#include <sstream>
 
 #pragma comment(lib, "Ws2_32.lib")
 
-Client::Client(std::string&& srvIpAddress, const int srvPort) :
+Client::Client(std::string& username, std::string&& srvIpAddress, const int srvPort) :
+    username(username),
     srvIpAddress(srvIpAddress),
     srvPort(srvPort) {
     initWSA();
@@ -43,7 +45,8 @@ int Client::connectToServer() {
     if (connect(clientSocket, reinterpret_cast<SOCKADDR*>(&clientService), sizeof(clientService)) == SOCKET_ERROR) {
         return handleError("[CONNECTION ERROR]");
     }
-    handleConnection();
+    sendThread = std::thread{ &Client::startSending, this };
+    listenResponse();
     return 0;
 }
 
@@ -59,21 +62,15 @@ void Client::shutdownConn(SOCKET connSocket) {
     closesocket(connSocket);
 }
 
-void Client::handleConnection() {
-    char sendBuffer[200];
-    char receiveBuffer[200];
+void Client::listenResponse() {
+    char receiveBuffer[4096];
     int recvByteCount = 0;
     do {
-        std::cin.getline(sendBuffer, 200);
-        int sendByteCount = send(clientSocket, sendBuffer, 200, 0);
-        if (sendByteCount == SOCKET_ERROR) {
-            shutdownConn(clientSocket);
-            handleError("[SEND ERROR]");
-            return;
-        }
-        recvByteCount = recv(clientSocket, receiveBuffer, 200, 0);
+        recvByteCount = recv(clientSocket, receiveBuffer, 4096, 0);
         if (recvByteCount > 0) {
-            std::cout << receiveBuffer << "\n";
+            if (receiveBuffer[0] != '\0') {
+                std::cout << receiveBuffer << "\n";
+            }
         }
         else if (recvByteCount == 0) {
             std::cout << "Closing connection\n";
@@ -85,4 +82,18 @@ void Client::handleConnection() {
         }
     } while (recvByteCount > 0);
     return;
+}
+
+void Client::startSending() {
+    do {
+        std::string msg;
+        std::getline(std::cin, msg);
+        msg = "[" + username + "] " + msg;
+        int sendByteCount = send(clientSocket, msg.c_str(), msg.size() + 1, 0);
+        if (sendByteCount == SOCKET_ERROR) {
+            shutdownConn(clientSocket);
+            handleError("[SEND ERROR]");
+            return;
+        }
+    } while (true);
 }

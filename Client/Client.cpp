@@ -1,8 +1,11 @@
 ﻿#include "tcp_client.h"
-#include <io.h>
+#include <iostream>
 
 int main()
 {
-    Client client{ "192.168.1.10", 8081 };
+    std::string username;
+    std::cout << "Write your username: ";
+    std::cin >> username;
+    Client client{ username, "192.168.1.10", 8081};
     client.connectToServer();
 }
