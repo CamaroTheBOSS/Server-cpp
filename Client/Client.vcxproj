@@ -127,11 +127,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Client.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="document.cpp" />
     <ClCompile Include="tcp_client.cpp" />
+    <ClCompile Include="terminal.cpp" />
+    <ClCompile Include="text_editor.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="document.h" />
     <ClInclude Include="tcp_client.h" />
+    <ClInclude Include="terminal.h" />
+    <ClInclude Include="text_editor.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
