@@ -1,4 +1,6 @@
+#define NOMINMAX
 #include "document.h"
+#include <algorithm>
 
 Document::Document() {
 	data.reserve(1024);
@@ -13,6 +15,10 @@ std::string Document::getLine(const int lineIndex) const {
 		return "";
 	}
 	return data[lineIndex];
+}
+
+std::vector<std::string> Document::get() const {
+	return data;
 }
 
 COORD Document::write(const char letter) {
@@ -40,7 +46,7 @@ COORD Document::write(const char letter) {
 			cursorPos.X = 0;
 		}
 	}
-	
+	offset = cursorPos.X;
 	return cursorPos;
 }
 
@@ -64,5 +70,70 @@ COORD Document::erase() {
 		cursorPos.X = data[cursorPos.Y].size();
 		data[cursorPos.Y] += toMoveUpper;
 	}
+	offset = cursorPos.X;
+	return cursorPos;
+}
+
+COORD Document::moveCursorLeft() {
+	if (cursorPos.X == 0 && cursorPos.Y == 0) {
+		return cursorPos;
+	}
+	if (cursorPos.X > 0) {
+		cursorPos.X--;
+		offset = cursorPos.X;
+		return cursorPos;
+	}
+	cursorPos.Y--;
+	cursorPos.X = data[cursorPos.Y].size() - 1;
+	offset = cursorPos.X;
+	return cursorPos;
+}
+
+COORD Document::moveCursorRight() {
+	if (cursorPos.Y == data.size() - 1 && cursorPos.X == data[cursorPos.Y].size()) {
+		return cursorPos;
+	}
+	if (cursorPos.X < data[cursorPos.Y].size()) {
+		cursorPos.X++;
+		offset = cursorPos.X;
+		return cursorPos;
+	}
+	cursorPos.Y++;
+	cursorPos.X = 0;
+	offset = cursorPos.X;
+	return cursorPos;
+}
+
+COORD Document::moveCursorUp(COORD& terminalSize) {
+	offset = offset % terminalSize.X;
+	if (cursorPos.X > terminalSize.X) {
+		cursorPos.X = (cursorPos.X / terminalSize.X - 1) * terminalSize.X + offset;
+		return cursorPos;
+	}
+	if (cursorPos.Y == 0) {
+		return cursorPos;
+	}
+	if (cursorPos.X < terminalSize.X) {
+		cursorPos.Y--;
+	}
+	int perfectCursorPos = data[cursorPos.Y].size() / terminalSize.X * terminalSize.X + offset;
+	cursorPos.X = std::min(perfectCursorPos, (int)data[cursorPos.Y].size() - 1);
+	return cursorPos;
+}
+
+COORD Document::moveCursorDown(COORD& terminalSize) {
+	offset = offset % terminalSize.X;
+	if (data[cursorPos.Y].size() > ceil((float)cursorPos.X / (float)terminalSize.X) * terminalSize.X) {
+		bool endLinePresent = data[cursorPos.Y][data[cursorPos.Y].size() - 1] == '\n';
+		cursorPos.X = std::min(cursorPos.X + terminalSize.X, (int)data[cursorPos.Y].size() - endLinePresent);
+		return cursorPos;
+	}
+	if (cursorPos.Y == data.size() - 1) {
+		return cursorPos;
+	}
+	cursorPos.Y++;
+	bool endLinePresent = data[cursorPos.Y][data[cursorPos.Y].size() - 1] == '\n';
+	int perfectCursorPos = (data[cursorPos.Y].size() % terminalSize.X) / terminalSize.X * terminalSize.X + offset;
+	cursorPos.X = std::min(perfectCursorPos, (int)data[cursorPos.Y].size() - endLinePresent);
 	return cursorPos;
 }

@@ -25,13 +25,13 @@ public:
 
     void setMode(Mode mode) const;
     COORD getCursorPos() const;
-    void setCursorPos(const COORD& newPos) const;
-    void renderTextFromPos(const COORD documentCursorPos) const;
-    void erase(const COORD documentCursorPos) const;
-    COORD moveCursorLeft(const COORD documentCursorPos, COORD& coord) const;
+    void setCursorPos(const COORD& newPos);
+    void renderTextFromPos(const COORD documentCursorPos);
+    void syncCursors();
+    HANDLE getConsoleHandle() const;
 
 private:
     Document& document;
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    int textLength = 0;
+    COORD cursorPos;
 };

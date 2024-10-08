@@ -40,53 +40,41 @@ int TerminalManager::readChar() const {
 }
 
 COORD TerminalManager::getCursorPos() const {
-    CONSOLE_SCREEN_BUFFER_INFO cursorInfo;
-    if (GetConsoleScreenBufferInfo(hConsole, &cursorInfo)) {
-        return cursorInfo.dwCursorPosition;
-    }
-    return COORD{ 0, 0 };
+    return cursorPos;
 }
 
-void TerminalManager::setCursorPos(const COORD& newPos) const {
+HANDLE TerminalManager::getConsoleHandle() const {
+    return hConsole;
+}
+
+void TerminalManager::setCursorPos(const COORD& newPos) {
     SetConsoleCursorPosition(hConsole, newPos);
+    cursorPos = newPos;
 }
 
-void TerminalManager::renderTextFromPos(const COORD documentCursorPos) const {
-    int lineIndexOffset = 0;
-    std::string textToRender = document.getLine(documentCursorPos.Y).substr(documentCursorPos.X);
-    while (!textToRender.empty()) {
-        std::cout << textToRender;
-        textToRender = document.getLine(documentCursorPos.Y + ++lineIndexOffset);
+void TerminalManager::renderTextFromPos(const COORD documentCursorPos){
+    system("cls");
+    for (const auto& line : document.get()) {
+        std::cout << line;
     }
 }
 
-void TerminalManager::erase(const COORD documentCursorPos) const {
-    COORD cursorPos = getCursorPos();
-    COORD textEndPos = moveCursorLeft(documentCursorPos, cursorPos);
-    setCursorPos(textEndPos);
-    std::cout << ' ';
-    setCursorPos(textEndPos);
-}
-
-COORD TerminalManager::moveCursorLeft(const COORD documentCursorPos, COORD& coord) const {
-    if (coord.X == 0 && coord.Y == 0) {
-        return coord;
-    }
-    if (coord.X > 0) {
-        coord.X--;
-        return coord;
-    }
+void TerminalManager::syncCursors() {
     CONSOLE_SCREEN_BUFFER_INFO cursorInfo;
     if (!GetConsoleScreenBufferInfo(hConsole, &cursorInfo)) {
-        return coord;
+        return;
     }
-    std::string currentTextLine = document.getLine(documentCursorPos.Y);
-    if (!currentTextLine.empty()) {
-        coord.X = currentTextLine.size() % cursorInfo.dwSize.X;
+    auto data = document.get();
+    COORD terminalCursorPos{ 0, 0 };
+    COORD documentCursorPos = document.getCursorPos();
+    for (int i = 0; i <= documentCursorPos.Y; i++) {
+        if (data[i].empty()) {
+            continue;
+        }
+        bool endlPresent = data[i][data[i].size() - 1] == '\n' && i != documentCursorPos.Y;
+        int base = i != documentCursorPos.Y ? data[i].size() : documentCursorPos.X;
+        terminalCursorPos.Y += base / cursorInfo.dwSize.X + endlPresent;
     }
-    else {
-        coord.X = document.getLine(documentCursorPos.Y - 1).size() % cursorInfo.dwSize.X;
-    }
-    coord.Y--;
-    return coord;
+    terminalCursorPos.X = documentCursorPos.X % cursorInfo.dwSize.X;
+    setCursorPos(terminalCursorPos);
 }
