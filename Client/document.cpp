@@ -107,7 +107,7 @@ COORD Document::moveCursorRight() {
 
 COORD Document::moveCursorUp(COORD& terminalSize) {
 	offset = offset % terminalSize.X;
-	if (cursorPos.X > terminalSize.X) {
+	if (cursorPos.X >= terminalSize.X) {
 		cursorPos.X = (cursorPos.X / terminalSize.X - 1) * terminalSize.X + offset;
 		return cursorPos;
 	}

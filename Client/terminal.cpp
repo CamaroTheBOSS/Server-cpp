@@ -20,7 +20,7 @@ void TerminalManager::setMode(Mode mode) const {
             stdInput,
             currMode & ~(
                 ENABLE_LINE_INPUT |
-                ENABLE_ECHO_INPUT | 
+                ENABLE_ECHO_INPUT |
                 ENABLE_MOUSE_INPUT |
                 ENABLE_PROCESSED_INPUT | 
                 ENABLE_QUICK_EDIT_MODE | 
@@ -62,19 +62,38 @@ void TerminalManager::render(){
     if (!SetConsoleCursorInfo(hConsole, &cursorInfo)) {
         return;
     }
-    setCursorPos(COORD{ 0, 0 });
-
     CONSOLE_SCREEN_BUFFER_INFO screenInfo;
     if (!GetConsoleScreenBufferInfo(hConsole, &screenInfo)) {
         return;
     }
-    for (auto line : document.get()) {
-        bool endlPresent = !line.empty() && line[line.size() - 1] == '\n';
-        int spaceCount = (line.size() / screenInfo.dwSize.X + 1) * screenInfo.dwSize.X - line.size();
-        line.insert(line.size() - endlPresent, std::string(spaceCount, ' '));
-        std::cout << line;
+    setCursorPos(COORD{ 0, screenInfo.srWindow.Top});
+    int tLineCounter = 0;
+    for (const auto& line : document.get()) {
+        int head = 0;
+        int tail = std::min((int)line.size(), (int)screenInfo.dwSize.X);
+        while (head < tail) {
+            bool last = tLineCounter >= screenInfo.srWindow.Bottom;
+            std::string tLine = line.substr(head, tail - head - last);
+            bool endlPresent = !tLine.empty() && tLine[tLine.size() - 1] == '\n';
+            int spaceCount = ceil((float)tLine.size() / (float)screenInfo.dwSize.X) * screenInfo.dwSize.X - tLine.size();
+            tLine.insert(tLine.size() - endlPresent, std::string(spaceCount, ' '));
+            if (tLineCounter >= screenInfo.srWindow.Top) {
+                std::cout << tLine;
+                if (tLineCounter > screenInfo.srWindow.Bottom) {
+                    break;
+                }
+            }
+            head += screenInfo.dwSize.X;
+            tail = std::min((int)line.size(), tail + (int)screenInfo.dwSize.X);
+            tLineCounter++;
+        }
+        if (tLineCounter > screenInfo.srWindow.Bottom) {
+            break;
+        }
     }
-    std::cout << std::string(screenInfo.dwSize.X, ' ');
+    if (tLineCounter <= screenInfo.srWindow.Bottom) {
+        std::cout << std::string(screenInfo.dwSize.X - 1, ' ');
+    }
     syncCursors();
     cursorInfo.bVisible = 1;
     SetConsoleCursorInfo(hConsole, &cursorInfo);
