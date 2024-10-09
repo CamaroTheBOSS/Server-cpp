@@ -15,7 +15,7 @@ public:
 
 	COORD getCursorPos() const;
 	std::string getLine(const int lineIndex) const;
-	std::vector<std::string> get() const;
+	const std::vector<std::string>& get();
 
 private:
 	std::vector<std::string> data{""};

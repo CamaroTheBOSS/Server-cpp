@@ -26,12 +26,12 @@ public:
     void setMode(Mode mode) const;
     COORD getCursorPos() const;
     void setCursorPos(const COORD& newPos);
-    void renderTextFromPos(const COORD documentCursorPos);
+    void render();
     void syncCursors();
     HANDLE getConsoleHandle() const;
 
 private:
     Document& document;
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    COORD cursorPos;
+    COORD cursorPos = COORD{0, 0};
 };

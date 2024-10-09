@@ -1,3 +1,4 @@
+#define NOMINMAX
 #include <conio.h>
 #include <iostream>
 
@@ -52,11 +53,31 @@ void TerminalManager::setCursorPos(const COORD& newPos) {
     cursorPos = newPos;
 }
 
-void TerminalManager::renderTextFromPos(const COORD documentCursorPos){
-    system("cls");
-    for (const auto& line : document.get()) {
+void TerminalManager::render(){
+    CONSOLE_CURSOR_INFO cursorInfo;
+    if (!GetConsoleCursorInfo(hConsole, &cursorInfo)) {
+        return;
+    }
+    cursorInfo.bVisible = 0;
+    if (!SetConsoleCursorInfo(hConsole, &cursorInfo)) {
+        return;
+    }
+    setCursorPos(COORD{ 0, 0 });
+
+    CONSOLE_SCREEN_BUFFER_INFO screenInfo;
+    if (!GetConsoleScreenBufferInfo(hConsole, &screenInfo)) {
+        return;
+    }
+    for (auto line : document.get()) {
+        bool endlPresent = !line.empty() && line[line.size() - 1] == '\n';
+        int spaceCount = (line.size() / screenInfo.dwSize.X + 1) * screenInfo.dwSize.X - line.size();
+        line.insert(line.size() - endlPresent, std::string(spaceCount, ' '));
         std::cout << line;
     }
+    std::cout << std::string(screenInfo.dwSize.X, ' ');
+    syncCursors();
+    cursorInfo.bVisible = 1;
+    SetConsoleCursorInfo(hConsole, &cursorInfo);
 }
 
 void TerminalManager::syncCursors() {
@@ -64,7 +85,7 @@ void TerminalManager::syncCursors() {
     if (!GetConsoleScreenBufferInfo(hConsole, &cursorInfo)) {
         return;
     }
-    auto data = document.get();
+    const auto& data = document.get();
     COORD terminalCursorPos{ 0, 0 };
     COORD documentCursorPos = document.getCursorPos();
     for (int i = 0; i <= documentCursorPos.Y; i++) {
