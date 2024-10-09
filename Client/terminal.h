@@ -27,7 +27,7 @@ public:
     COORD getCursorPos() const;
     void setCursorPos(const COORD& newPos);
     void render();
-    void syncCursors();
+    COORD syncCursors();
     HANDLE getConsoleHandle() const;
 
 private:

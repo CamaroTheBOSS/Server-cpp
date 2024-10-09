@@ -1,6 +1,7 @@
 #define NOMINMAX
 #include <conio.h>
 #include <iostream>
+#include <windows.h>
 
 #include "terminal.h"
 
@@ -29,6 +30,13 @@ void TerminalManager::setMode(Mode mode) const {
                 )
         );
     }
+    RECT r;
+    HWND console = GetConsoleWindow();
+    GetWindowRect(console, &r); //stores the console's current dimensions
+    if (!MoveWindow(console, r.left, r.top, 300, 200, TRUE)) {
+        std::cout << GetLastError();
+        return;
+    }
 }
 
 int TerminalManager::readChar() const {
@@ -54,6 +62,7 @@ void TerminalManager::setCursorPos(const COORD& newPos) {
 }
 
 void TerminalManager::render(){
+    COORD correctCursorPos = syncCursors();
     CONSOLE_CURSOR_INFO cursorInfo;
     if (!GetConsoleCursorInfo(hConsole, &cursorInfo)) {
         return;
@@ -68,41 +77,43 @@ void TerminalManager::render(){
     }
     setCursorPos(COORD{ 0, screenInfo.srWindow.Top});
     int tLineCounter = 0;
+    std::string toPrint;
     for (const auto& line : document.get()) {
         int head = 0;
         int tail = std::min((int)line.size(), (int)screenInfo.dwSize.X);
-        while (head < tail) {
-            bool last = tLineCounter >= screenInfo.srWindow.Bottom;
-            std::string tLine = line.substr(head, tail - head - last);
+        while (head < tail && tLineCounter <= screenInfo.srWindow.Bottom) {
+            if (tLineCounter < screenInfo.srWindow.Top) {
+                head += screenInfo.dwSize.X;
+                tail = std::min((int)line.size(), tail + (int)screenInfo.dwSize.X);
+                tLineCounter++;
+                continue;
+            }
+            std::string tLine = line.substr(head, tail - head);
             bool endlPresent = !tLine.empty() && tLine[tLine.size() - 1] == '\n';
             int spaceCount = ceil((float)tLine.size() / (float)screenInfo.dwSize.X) * screenInfo.dwSize.X - tLine.size();
             tLine.insert(tLine.size() - endlPresent, std::string(spaceCount, ' '));
-            if (tLineCounter >= screenInfo.srWindow.Top) {
-                std::cout << tLine;
-                if (tLineCounter > screenInfo.srWindow.Bottom) {
-                    break;
-                }
-            }
+            toPrint += tLine;
             head += screenInfo.dwSize.X;
             tail = std::min((int)line.size(), tail + (int)screenInfo.dwSize.X);
             tLineCounter++;
         }
-        if (tLineCounter > screenInfo.srWindow.Bottom) {
-            break;
-        }
+    }
+    if (toPrint[toPrint.size() - 1] == '\n') {
+        toPrint[toPrint.size() - 1] = ' ';
     }
     if (tLineCounter <= screenInfo.srWindow.Bottom) {
-        std::cout << std::string(screenInfo.dwSize.X - 1, ' ');
+        toPrint += std::string(screenInfo.dwSize.X - 1, ' ');
     }
-    syncCursors();
+    std::cout << toPrint;
+    setCursorPos(correctCursorPos);
     cursorInfo.bVisible = 1;
     SetConsoleCursorInfo(hConsole, &cursorInfo);
 }
 
-void TerminalManager::syncCursors() {
+COORD TerminalManager::syncCursors() {
     CONSOLE_SCREEN_BUFFER_INFO cursorInfo;
     if (!GetConsoleScreenBufferInfo(hConsole, &cursorInfo)) {
-        return;
+        return COORD{0, 0};
     }
     const auto& data = document.get();
     COORD terminalCursorPos{ 0, 0 };
@@ -117,4 +128,5 @@ void TerminalManager::syncCursors() {
     }
     terminalCursorPos.X = documentCursorPos.X % cursorInfo.dwSize.X;
     setCursorPos(terminalCursorPos);
+    return terminalCursorPos;
 }

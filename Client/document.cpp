@@ -93,7 +93,7 @@ COORD Document::moveCursorRight() {
 	if (cursorPos.Y == data.size() - 1 && cursorPos.X == data[cursorPos.Y].size()) {
 		return cursorPos;
 	}
-	bool endlPresent = data[cursorPos.Y][data[cursorPos.Y].size() - 1] == '\n';
+	bool endlPresent = !data[cursorPos.Y].empty() && data[cursorPos.Y][data[cursorPos.Y].size() - 1] == '\n';
 	if (cursorPos.X < data[cursorPos.Y].size() - endlPresent) {
 		cursorPos.X++;
 		offset = cursorPos.X;
@@ -125,7 +125,7 @@ COORD Document::moveCursorUp(COORD& terminalSize) {
 COORD Document::moveCursorDown(COORD& terminalSize) {
 	offset = offset % terminalSize.X;
 	if (data[cursorPos.Y].size() > (cursorPos.X / terminalSize.X + 1) * terminalSize.X) {
-		bool endlPresent = data[cursorPos.Y][data[cursorPos.Y].size() - 1] == '\n';
+		bool endlPresent = !data[cursorPos.Y].empty() && data[cursorPos.Y][data[cursorPos.Y].size() - 1] == '\n';
 		cursorPos.X = std::min(cursorPos.X + terminalSize.X, (int)data[cursorPos.Y].size() - endlPresent);
 		return cursorPos;
 	}
@@ -133,7 +133,7 @@ COORD Document::moveCursorDown(COORD& terminalSize) {
 		return cursorPos;
 	}
 	cursorPos.Y++;
-	bool endlPresent = data[cursorPos.Y][data[cursorPos.Y].size() - 1] == '\n';
+	bool endlPresent = !data[cursorPos.Y].empty() && data[cursorPos.Y][data[cursorPos.Y].size() - 1] == '\n';
 	int perfectCursorPos = (data[cursorPos.Y].size() % terminalSize.X) / terminalSize.X * terminalSize.X + offset;
 	cursorPos.X = std::min(perfectCursorPos, (int)data[cursorPos.Y].size() - endlPresent);
 	return cursorPos;
