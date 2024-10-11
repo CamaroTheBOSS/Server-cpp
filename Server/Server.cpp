@@ -7,20 +7,27 @@
 #include <WS2tcpip.h>
 #pragma comment(lib, "Ws2_32.lib")
 
+#include "document.h"
+#include "logger.h"
+#include "message_manager.h"
+
 class Server {
 
 public:
     Server(std::string&& ipAddress, const int port, const int threadPoolSize):
         ipAddress(std::move(ipAddress)),
         port(port),
-        threadPoolSize(threadPoolSize) {
+        threadPoolSize(threadPoolSize),
+        document(),
+        logger("server.log"),
+        msgManager() {
         initWSA();
         openServerSocket();
         bindServerSocket();
     }
 
     int listenForConns() {
-        std::cout << "LISTENING\n";
+        logger.log("LISTENING");
         auto listenVal = listen(serverSocket, SOMAXCONN);
         if (listenVal == SOCKET_ERROR) {
             logError("[LISTENING ERROR]");
@@ -39,6 +46,29 @@ public:
                 WSACleanup();
                 return -1;
             }
+
+            // Send current version od document to the new client
+            std::string text;
+            for (const auto& line : document.get()) {
+                text += line;
+            }
+            if (!text.empty()) {
+                char sendBuffer[4096];
+                u_long X = htonl(0);
+                u_long Y = htonl(0);
+                memcpy(sendBuffer + 1, &X, sizeof(u_long));
+                memcpy(sendBuffer + 5, &Y, sizeof(u_long));
+                memcpy(sendBuffer + 9, text.c_str(), text.size() + 1);
+                int msgSize = 10 + text.size();
+                int sendByteCount = send(newConnection, sendBuffer, msgSize, 0);
+                if (sendByteCount == SOCKET_ERROR) {
+                    int shutDownResult = shutdown(newConnection, SD_SEND);
+                    closesocket(newConnection);
+                    logError("[SEND ERROR]");
+                    continue;
+                }
+            }
+
             // Assign connection to the next thread and notify it
             std::scoped_lock lock(threadPoolLock);
             auto threadInfo = threadPool.begin() + workerIndex;
@@ -47,8 +77,10 @@ public:
             int sendByteCount = send(threadInfo->notifier, "", 1, 0);
             if (sendByteCount == SOCKET_ERROR) {
                 logError("[NOTIFY ERROR]");
-            }   
-            std::cout << "New connection arrived\n";
+            }
+            std::stringstream ss;
+            ss << "New connection " << newConnection << " arrived->thread " << threadInfo->thread.get_id() << " notified.";
+            logger.log(ss.str());
         }
         return 0;
     }
@@ -70,11 +102,11 @@ private:
             threadPool.emplace_back(ThreadConns{ std::move(worker), std::move(workerConnections) });
             threadPool[threadPool.size() - 1].notifier = notifier;
         }
-        std::cout << "Started " << std::to_string(threadPool.size()) << " workers\n";
+        logger.log("Started " + std::to_string(threadPool.size()) + " workers");
     }
 
     void logError(std::string&& prefix) {
-        std::cout << prefix << ' ' << WSAGetLastError() << '\n';
+        logger.log(prefix + ' ' + std::to_string(WSAGetLastError()));
     }
 
     void shutdownConn(const SOCKET connection, const int threadIdx) {
@@ -86,12 +118,21 @@ private:
         FD_CLR(connection, &threadInfo->connectionSet);
     }
 
-    void broadcastMessage(std::string& msg) {
+    void broadcastMessage(const char* buffer, const int size, SOCKET sender) {
         std::scoped_lock lock{threadPoolLock};
         for (const auto& threadInfo : threadPool) {
             for (int i = 0; i < threadInfo.connectionSet.fd_count; i++) {
                 SOCKET client = threadInfo.connectionSet.fd_array[i];
-                int sendByteCount = send(client, msg.c_str(), msg.size() + 1, 0);
+                int sendByteCount = 0;
+                if (client == sender) {
+                    std::unique_ptr<char[]> bufferForSender = std::make_unique<char[]>(size);
+                    memcpy(bufferForSender.get(), buffer, size);
+                    bufferForSender.get()[0] = 1;
+                    sendByteCount = send(client, bufferForSender.get(), size, 0);
+                }
+                else {
+                    sendByteCount = send(client, buffer, size, 0);
+                }
                 if (sendByteCount == SOCKET_ERROR) {
                     logError("[SEND ERROR]");
                 }
@@ -136,7 +177,8 @@ private:
             if (observedConnections.fd_count == 0) {
                 continue;
             }
-            int socketCount = select(0, &observedConnections, nullptr, nullptr, nullptr);
+            timeval timeout{ 1 };
+            int socketCount = select(0, &observedConnections, nullptr, nullptr, &timeout);
             if (socketCount < 0) {
                 logError("[SELECT ERROR]");
                 continue;
@@ -146,13 +188,31 @@ private:
                 char recvBuffer[4096];
                 int recvByteCount = 0;
                 recvByteCount = recv(client, recvBuffer, 4096, 0);
-                if (recvByteCount > 0) {
-                    std::string msg{recvBuffer};
-                    broadcastMessage(msg);
-                    //send(client, msg.c_str(), msg.size() + 1, 0);
+                if (recvByteCount == 1) {
+                    std::stringstream ss;
+                    ss << std::this_thread::get_id() << " thread got new conn!";
+                    logger.log(ss.str());
+                }
+                else if (recvByteCount > 0) {
+                    std::cout << recvBuffer;
+                    COORD cursorPos{0, 0};
+                    cursorPos.X = (int)recvBuffer[1] << 24 | recvBuffer[2] << 16 | recvBuffer[3] << 8 | recvBuffer[4];
+                    cursorPos.Y = (int)recvBuffer[5] << 24 | recvBuffer[6] << 16 | recvBuffer[7] << 8 | recvBuffer[8];
+                    std::string msg{recvBuffer + 9};
+                    std::scoped_lock lock{docMutex};
+                    if (document.setCursorPos(cursorPos)) {
+                        std::stringstream ss;
+                        ss << std::this_thread::get_id() << "thread got msg:" << " XY[" << cursorPos.X << "," << cursorPos.Y << "] " << msg;
+                        logger.log(ss.str());
+                        document.write(msg);
+                        broadcastMessage(recvBuffer, recvByteCount, client);
+                    }
+                    else {
+                        logger.log("[ERROR] cannot place cursor!");
+                    }
                 }
                 else if (recvByteCount == 0) {
-                    std::cout << "Closing connection\n";
+                    logger.log("Connection closed");
                     shutdownConn(client, threadIdx);
                 }
                 else {
@@ -210,10 +270,15 @@ private:
     std::string ipAddress;
     int port;
     int threadPoolSize;
+
+    std::mutex docMutex;
+    Document document;
+    Logger logger;
+    MessageManager msgManager;
 };
 
 int main()
 {
-    Server server{ "192.168.1.10", 8081, 10 };
+    Server server{ "192.168.1.10", 8081, 8 };
     server.listenForConns();
 }

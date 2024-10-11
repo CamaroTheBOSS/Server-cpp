@@ -1,4 +1,5 @@
 #pragma once
+#include "tcp_client.h"
 #include "document.h"
 #include "terminal.h"
 
@@ -10,4 +11,5 @@ public:
 private:
 	Document document;
 	TerminalManager terminal;
+	Client tcpClient;
 };

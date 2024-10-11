@@ -1,9 +1,20 @@
 #define NOMINMAX
+
+#include "pch.h"
 #include "document.h"
 #include <algorithm>
 
 Document::Document() {
 	data.reserve(1024);
+}
+
+bool Document::setCursorPos(COORD newPos) {
+	if (data.size() <= newPos.Y || data[newPos.Y].size() < newPos.X) {
+		return false;
+	}
+	cursorPos = newPos;
+	offset = newPos.X;
+	return true;
 }
 
 COORD Document::getCursorPos() const {
@@ -47,6 +58,13 @@ COORD Document::write(const char letter) {
 		}
 	}
 	offset = cursorPos.X;
+	return cursorPos;
+}
+
+COORD Document::write(const std::string& text) {
+	for (const auto letter : text) {
+		write(letter);
+	}
 	return cursorPos;
 }
 
@@ -118,7 +136,7 @@ COORD Document::moveCursorUp(COORD& terminalSize) {
 		cursorPos.Y--;
 	}
 	int perfectCursorPos = data[cursorPos.Y].size() / terminalSize.X * terminalSize.X + offset;
-	cursorPos.X = std::min(perfectCursorPos, (int)data[cursorPos.Y].size() - 1);
+	cursorPos.X = (std::min)(perfectCursorPos, (int)data[cursorPos.Y].size() - 1);
 	return cursorPos;
 }
 
@@ -126,7 +144,7 @@ COORD Document::moveCursorDown(COORD& terminalSize) {
 	offset = offset % terminalSize.X;
 	if (data[cursorPos.Y].size() > (cursorPos.X / terminalSize.X + 1) * terminalSize.X) {
 		bool endlPresent = !data[cursorPos.Y].empty() && data[cursorPos.Y][data[cursorPos.Y].size() - 1] == '\n';
-		cursorPos.X = std::min(cursorPos.X + terminalSize.X, (int)data[cursorPos.Y].size() - endlPresent);
+		cursorPos.X = (std::min)(cursorPos.X + terminalSize.X, (int)data[cursorPos.Y].size() - endlPresent);
 		return cursorPos;
 	}
 	if (cursorPos.Y == data.size() - 1) {
@@ -135,6 +153,6 @@ COORD Document::moveCursorDown(COORD& terminalSize) {
 	cursorPos.Y++;
 	bool endlPresent = !data[cursorPos.Y].empty() && data[cursorPos.Y][data[cursorPos.Y].size() - 1] == '\n';
 	int perfectCursorPos = (data[cursorPos.Y].size() % terminalSize.X) / terminalSize.X * terminalSize.X + offset;
-	cursorPos.X = std::min(perfectCursorPos, (int)data[cursorPos.Y].size() - endlPresent);
+	cursorPos.X = (std::min)(perfectCursorPos, (int)data[cursorPos.Y].size() - endlPresent);
 	return cursorPos;
 }
