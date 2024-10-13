@@ -1,284 +1,224 @@
-﻿#include <iostream>
-#include <string>
-#include <mutex>
-#include <unordered_map>
+#include "server.h"
+#include "messages.h"
+#include "load_balancer.h"
 
-#include <winsock2.h>
 #include <WS2tcpip.h>
-#pragma comment(lib, "Ws2_32.lib")
+#pragma push_macro("ERROR")
+#undef ERROR
 
-#include "document.h"
-#include "logger.h"
-#include "message_manager.h"
+#include <iostream>
 
-class Server {
+Server::Server(std::string ip, const int port, const int threadPoolSize, std::string logFile) :
+    ip(ip),
+    port(port),
+    threadPoolSize(threadPoolSize),
+	logger(logFile),
+    loadBalancer(threadInfos) {
+		listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		if (listenSocket == INVALID_SOCKET) {
+			logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when creating listening socket");
+			return;
+		}
+        
+		listenSocketAddress.sin_family = AF_INET;
+		listenSocketAddress.sin_port = htons(port);
+		std::wstring ipStr{ip.begin(), ip.end()};
+		InetPton(AF_INET, ipStr.c_str(), &listenSocketAddress.sin_addr.s_addr);
+		if (bind(listenSocket, reinterpret_cast<SOCKADDR*>(&listenSocketAddress), sizeof(listenSocketAddress)) == SOCKET_ERROR) {
+			logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when binding listening socket");
+		}
+	}
 
-public:
-    Server(std::string&& ipAddress, const int port, const int threadPoolSize):
-        ipAddress(std::move(ipAddress)),
-        port(port),
-        threadPoolSize(threadPoolSize),
-        document(),
-        logger("server.log"),
-        msgManager() {
-        initWSA();
-        openServerSocket();
-        bindServerSocket();
+void Server::open() {
+    if (listen(listenSocket, SOMAXCONN)) {
+        logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when starting listening");
+        return;
     }
+    initThreadPool();
 
-    int listenForConns() {
-        logger.log("LISTENING");
-        auto listenVal = listen(serverSocket, SOMAXCONN);
-        if (listenVal == SOCKET_ERROR) {
-            logError("[LISTENING ERROR]");
-            closesocket(serverSocket);
-            WSACleanup();
+    while (true) {
+        SOCKET newConnection = accept(listenSocket, nullptr, nullptr);
+        if (newConnection == INVALID_SOCKET) {
+            logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when accepting new connection");
+            closesocket(newConnection);
+            continue;
         }
-        initThreadPool();
-        int workerIndex = 0;
-        while (true) {
-            // Accept incoming connection
-            auto newConnection = accept(serverSocket, nullptr, nullptr);
-            if (newConnection == INVALID_SOCKET) {
-                logError("[CONNECTION REFUSED]");
-                closesocket(newConnection);
-                closesocket(serverSocket);
-                WSACleanup();
-                return -1;
-            }
-
-            // Send current version od document to the new client
-            std::string text;
-            for (const auto& line : document.get()) {
-                text += line;
-            }
-            if (!text.empty()) {
-                char sendBuffer[4096];
-                u_long X = htonl(0);
-                u_long Y = htonl(0);
-                memcpy(sendBuffer + 1, &X, sizeof(u_long));
-                memcpy(sendBuffer + 5, &Y, sizeof(u_long));
-                memcpy(sendBuffer + 9, text.c_str(), text.size() + 1);
-                int msgSize = 10 + text.size();
-                int sendByteCount = send(newConnection, sendBuffer, msgSize, 0);
-                if (sendByteCount == SOCKET_ERROR) {
-                    int shutDownResult = shutdown(newConnection, SD_SEND);
-                    closesocket(newConnection);
-                    logError("[SEND ERROR]");
-                    continue;
-                }
-            }
-
-            // Assign connection to the next thread and notify it
-            std::scoped_lock lock(threadPoolLock);
-            auto threadInfo = threadPool.begin() + workerIndex;
-            FD_SET(newConnection, &threadInfo->connectionSet);
-            workerIndex = (workerIndex + 1) % threadPoolSize;
-            int sendByteCount = send(threadInfo->notifier, "", 1, 0);
-            if (sendByteCount == SOCKET_ERROR) {
-                logError("[NOTIFY ERROR]");
-            }
-            std::stringstream ss;
-            ss << "New connection " << newConnection << " arrived->thread " << threadInfo->thread.get_id() << " notified.";
-            logger.log(ss.str());
-        }
-        return 0;
-    }
-
-private:
-    void initThreadPool() {
-        // Start specified number of workers
-        std::scoped_lock lock{threadPoolLock};
-        for (int i = 0; i < threadPoolSize; i++) {
-            std::thread worker{&Server::handleConnections, this, i};
-            auto notifier = accept(serverSocket, nullptr, nullptr);
-            if (notifier == INVALID_SOCKET) {
-                closesocket(notifier);
-                logError("[NOTIFY ERROR]");
-                continue;
-            }
-            fd_set workerConnections;
-            FD_ZERO(&workerConnections);
-            threadPool.emplace_back(ThreadConns{ std::move(worker), std::move(workerConnections) });
-            threadPool[threadPool.size() - 1].notifier = notifier;
-        }
-        logger.log("Started " + std::to_string(threadPool.size()) + " workers");
-    }
-
-    void logError(std::string&& prefix) {
-        logger.log(prefix + ' ' + std::to_string(WSAGetLastError()));
-    }
-
-    void shutdownConn(const SOCKET connection, const int threadIdx) {
-        // Shutdown connection and remove it from FD_SET
-        int shutDownResult = shutdown(connection, SD_SEND);
-        closesocket(connection);
-        std::scoped_lock lock{threadPoolLock};
-        auto threadInfo = threadPool.begin() + threadIdx;
-        FD_CLR(connection, &threadInfo->connectionSet);
-    }
-
-    void broadcastMessage(const char* buffer, const int size, SOCKET sender) {
-        std::scoped_lock lock{threadPoolLock};
-        for (const auto& threadInfo : threadPool) {
-            for (int i = 0; i < threadInfo.connectionSet.fd_count; i++) {
-                SOCKET client = threadInfo.connectionSet.fd_array[i];
-                int sendByteCount = 0;
-                if (client == sender) {
-                    std::unique_ptr<char[]> bufferForSender = std::make_unique<char[]>(size);
-                    memcpy(bufferForSender.get(), buffer, size);
-                    bufferForSender.get()[0] = 1;
-                    sendByteCount = send(client, bufferForSender.get(), size, 0);
-                }
-                else {
-                    sendByteCount = send(client, buffer, size, 0);
-                }
-                if (sendByteCount == SOCKET_ERROR) {
-                    logError("[SEND ERROR]");
-                }
-            }
-        }
-    }
-
-    int handleConnections(const int threadIdx) {
-        // Create socket for communication with master
-        SOCKET masterListener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (masterListener == INVALID_SOCKET) {
-            logError("[WORKER SOCKET OPENING ERROR]");
-            closesocket(masterListener);
-            return 0;
-        }
-
-        // Connect to master
-        sockaddr_in service;
-        service.sin_family = AF_INET;
-        std::wstring stemp{ipAddress.begin(), ipAddress.end()};
-        InetPton(AF_INET, stemp.c_str(), &service.sin_addr.s_addr);
-        service.sin_port = htons(port);
-        if (connect(masterListener, reinterpret_cast<SOCKADDR*>(&service), sizeof(service)) == SOCKET_ERROR) {
-            logError("[MASTER CONNECTION ERROR]");
-            return -1;
-        }
-
-        // Master communication channel must be added to FD_SET to make select() sensitive for incoming data from master
+        sync(newConnection);
+        ThreadMapIterator threadInfo;
         {
-            std::scoped_lock lock{threadPoolLock};
-            auto threadInfo = threadPool.begin() + threadIdx;
-            FD_SET(masterListener, &threadInfo->connectionSet);
+            std::scoped_lock lock{threadInfosLock};
+            threadInfo = loadBalancer.select();
+            FD_SET(newConnection, &threadInfo->second.clients);
         }
-        while (true) {
-            // Copy FD_SET and then select
-            FD_SET observedConnections;
-            {
-                std::scoped_lock lock{threadPoolLock};
-                auto threadInfo = threadPool.begin() + threadIdx;
-                observedConnections = threadInfo->connectionSet;
-            }
-            if (observedConnections.fd_count == 0) {
+        int sendBytes= send(threadInfo->second.notifier, "", 1, 0);
+        if (sendBytes < 0) {
+            logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when notifying thread ", threadInfo->first, " about new connection");
+            continue;
+        }
+        logger.log(logs::Level::DEBUG, "Connection ", newConnection, " has been forwarded to thread ", threadInfo->first);
+    }
+    return;
+}
+
+void Server::sync(SOCKET dst) {
+    // TODO Support for messages sent in chunks, cause 4096 buffer can be easly overflowed
+    std::string text = doc.getText();
+    if (text.empty()) {
+        return;
+    }
+    msg::Sync msg{1, 0, text};
+    msg::Buffer sendBuff{ 4096 };
+    msg.serializeTo(sendBuff);
+    int sendBytes = send(dst, sendBuff.get(), sendBuff.size, 0);
+    if (sendBytes < 0) {
+        closesocket(dst);
+        shutdown(dst, SD_SEND);
+        logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error on document synchronization with ", dst);
+        return;
+    }
+    logger.log(logs::Level::DEBUG, "Document has been synchronized with ", dst);
+}
+
+void Server::initThreadPool() {
+    std::scoped_lock lock{threadInfosLock};
+    for (int i = 0; i < threadPoolSize; i++) {
+        std::thread worker{&Server::handleConnection, this};
+        auto notifySocket = accept(listenSocket, nullptr, nullptr);
+        if (notifySocket == INVALID_SOCKET) {
+            closesocket(notifySocket);
+            logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error on opening notify socket to thread ", worker.get_id());
+            continue;
+        }
+        FD_SET workerClients;
+        FD_ZERO(&workerClients);
+        auto [it, newOne] = threadInfos.emplace(worker.get_id(), ThreadInfo{ std::move(workerClients), INVALID_SOCKET, INVALID_SOCKET });
+        it->second.notifier = notifySocket;
+        threads.emplace_back(std::move(worker));
+    }
+    logger.log(logs::Level::DEBUG, "Created ", threads.size(), " threads");
+}
+
+void Server::removeThread() {
+    std::scoped_lock lock{threadInfosLock};
+    threadInfos.erase(std::this_thread::get_id());
+}
+
+void Server::handleConnection() {
+    // Create a communication pipe to master
+    SOCKET notifyListenerSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (notifyListenerSocket == INVALID_SOCKET) {
+        logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error on creating notify listener socket in thread ", std::this_thread::get_id());
+        closesocket(notifyListenerSocket);
+        return removeThread();
+    }
+
+    // Connect to master
+    sockaddr_in address;
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    std::wstring ipStr{ip.begin(), ip.end()};
+    InetPton(AF_INET, ipStr.c_str(), &address.sin_addr.s_addr);
+    if (connect(notifyListenerSocket, reinterpret_cast<SOCKADDR*>(&address), sizeof(address))) {
+        logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when connecting thread ", std::this_thread::get_id(), " to master");
+        return removeThread();
+    }
+    {
+        std::scoped_lock lock{threadInfosLock};
+        auto& threadInfo = threadInfos[std::this_thread::get_id()];
+        FD_SET(notifyListenerSocket, &threadInfo.clients);
+        threadInfo.notifyListener = notifyListenerSocket;
+    }
+    while (true) {
+        // Copy FD_SET and then select
+        FD_SET threadClients;
+        {
+            std::scoped_lock lock{threadInfosLock};
+            auto& threadInfo = threadInfos[std::this_thread::get_id()];
+            threadClients = threadInfo.clients;
+        }
+        if (threadClients.fd_count == 0) {
+            continue;
+        }
+        int socketCount = select(0, &threadClients, nullptr, nullptr, nullptr);
+        if (socketCount < 0) {
+            logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when selecting client");
+            continue;
+        }
+        for (int i = 0; i < socketCount; i++) {
+            SOCKET client = threadClients.fd_array[i];
+            msg::Buffer recvBuff{ 4096 };
+            recvBuff.size = recv(client, recvBuff.get(), recvBuff.capacity, 0);
+            if (recvBuff.size == 1) {
+                logger.log(logs::Level::DEBUG, "Thread ", std::this_thread::get_id(), " got new connection ", client);
                 continue;
             }
-            timeval timeout{ 1 };
-            int socketCount = select(0, &observedConnections, nullptr, nullptr, &timeout);
-            if (socketCount < 0) {
-                logError("[SELECT ERROR]");
-                continue;
-            }
-            for (int i = 0; i < socketCount; i++) {
-                SOCKET client = observedConnections.fd_array[i];
-                char recvBuffer[4096];
-                int recvByteCount = 0;
-                recvByteCount = recv(client, recvBuffer, 4096, 0);
-                if (recvByteCount == 1) {
-                    std::stringstream ss;
-                    ss << std::this_thread::get_id() << " thread got new conn!";
-                    logger.log(ss.str());
-                }
-                else if (recvByteCount > 0) {
-                    std::cout << recvBuffer;
-                    COORD cursorPos{0, 0};
-                    cursorPos.X = (int)recvBuffer[1] << 24 | recvBuffer[2] << 16 | recvBuffer[3] << 8 | recvBuffer[4];
-                    cursorPos.Y = (int)recvBuffer[5] << 24 | recvBuffer[6] << 16 | recvBuffer[7] << 8 | recvBuffer[8];
-                    std::string msg{recvBuffer + 9};
-                    std::scoped_lock lock{docMutex};
-                    if (document.setCursorPos(cursorPos)) {
-                        std::stringstream ss;
-                        ss << std::this_thread::get_id() << "thread got msg:" << " XY[" << cursorPos.X << "," << cursorPos.Y << "] " << msg;
-                        logger.log(ss.str());
-                        document.write(msg);
-                        broadcastMessage(recvBuffer, recvByteCount, client);
+            if (recvBuff.size > 1) {
+                auto header = msg::Header::parse(recvBuff, 0);
+                if (header.type == msg::MessageType::write) {
+                    auto msg = msg::Write::parse(recvBuff, 0);
+                    std::scoped_lock loc{docLock};
+                    if (doc.setCursorPos(msg.cursorPos)) {
+                        doc.write(msg.msg);
+                        broadcast(recvBuff);
+                        logger.log(logs::Level::INFO, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] wrote '", msg.msg, "'");
                     }
                     else {
-                        logger.log("[ERROR] cannot place cursor!");
+                        logger.log(logs::Level::ERROR, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] Cannot place cursor on write msg!");
                     }
                 }
-                else if (recvByteCount == 0) {
-                    logger.log("Connection closed");
-                    shutdownConn(client, threadIdx);
-                }
-                else {
-                    logError("[RECV ERROR]");
-                    shutdownConn(client, threadIdx);
+                else if (header.type == msg::MessageType::erase) {
+                    auto msg = msg::Erase::parse(recvBuff, 0);
+                    std::scoped_lock loc{docLock};
+                    if (doc.setCursorPos(msg.cursorPos)) {
+                        doc.erase();
+                        broadcast(recvBuff);
+                        logger.log(logs::Level::INFO, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] erased '", msg.eraseSize, "'");
+                    }
+                    else {
+                        logger.log(logs::Level::ERROR, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] Cannot place cursor on erase msg!");
+                    }
                 }
             }
+            else if (recvBuff.size == 0) {
+                logger.log(logs::Level::DEBUG, "Connection with ", client, " has been closed");
+                shutdownConnection(client);
+            }
+            else {
+                logger.log(logs::Level::ERROR, "Error on receiving data from", client, "! Closing connection");
+                shutdownConnection(client);
+            }
         }
-        return 0;
     }
-
-    int initWSA() {
-        WSADATA wsaData;
-        int wsaError;
-        WORD wVersionRequested = MAKEWORD(2, 2);
-        wsaError = WSAStartup(wVersionRequested, &wsaData);
-        if (wsaError) {
-            std::cout << "[WSA STARTUP ERROR] " << std::to_string(wsaError) << '\n';
-            return -1;
-        }
-        return 0;
-    }
-
-    int openServerSocket() {
-        serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (serverSocket == INVALID_SOCKET) {
-            logError("[LISTEN SOCKET OPENING ERROR]");
-            return -1;
-        }
-        return 0;
-    }
-
-    int bindServerSocket() {
-        service.sin_family = AF_INET;
-        std::wstring stemp{ipAddress.begin(), ipAddress.end()};
-        InetPton(AF_INET, stemp.c_str(), &service.sin_addr.s_addr);
-        service.sin_port = htons(port);
-        if (bind(serverSocket, reinterpret_cast<SOCKADDR*>(&service), sizeof(service)) == SOCKET_ERROR) {
-            logError("[LISTEN SOCKET BINDING ERROR]");
-            return -1;
-        }
-        return 0;
-    }
-    struct ThreadConns {
-        std::thread thread;
-        FD_SET connectionSet;
-        SOCKET notifier;
-    };
-    std::vector<ThreadConns> threadPool;
-    std::mutex threadPoolLock;
-
-    SOCKET serverSocket = INVALID_SOCKET;
-    sockaddr_in service;
-
-    std::string ipAddress;
-    int port;
-    int threadPoolSize;
-
-    std::mutex docMutex;
-    Document document;
-    Logger logger;
-    MessageManager msgManager;
-};
-
-int main()
-{
-    Server server{ "192.168.1.10", 8081, 8 };
-    server.listenForConns();
 }
+
+void Server::broadcast(msg::Buffer& buffer) {
+    std::scoped_lock lock{threadInfosLock};
+    for (const auto& threadInfo : threadInfos) {
+        for (int i = 0; i < threadInfo.second.clients.fd_count; i++) {
+            SOCKET client = threadInfo.second.clients.fd_array[i];
+            if (client == threadInfo.second.notifyListener) {
+                continue;
+            }
+            int sendBytes = send(client, buffer.get(), buffer.size, 0);
+            if (sendBytes < 0) {
+                logger.log(logs::Level::ERROR, "Error on broadcasting msg to ", client);
+            }
+        }
+    }
+}
+
+void Server::shutdownConnection(SOCKET connection) {
+    closesocket(connection);
+    shutdown(connection, SD_SEND);
+    std::scoped_lock lock{threadInfosLock};
+    auto& threadInfo = threadInfos[std::this_thread::get_id()];
+    FD_CLR(connection, &threadInfo.clients);
+}
+
+void Server::close() {
+    logger.log(logs::Level::INFO, "Closing server...");
+    closesocket(listenSocket);
+    logger.log(logs::Level::INFO, "Server closed");
+}
+
+#pragma pop_macro("ERROR")

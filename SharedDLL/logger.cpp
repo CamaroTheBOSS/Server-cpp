@@ -2,21 +2,30 @@
 #include <ctime>
 #include "logger.h"
 
-Logger::Logger(std::string logFilePath):
-	file(logFilePath, std::ofstream::out | std::ofstream::trunc) {}
+#pragma push_macro("ERROR")
+#undef ERROR
 
-Logger::~Logger() {
-	file.close();
-}
+namespace logs {
 
-void Logger::log(const std::string& message) {
-	time_t timestamp;
-	time(&timestamp);
-	std::stringstream stream;
-	char timeBuffer[100];
-	if (ctime_s(timeBuffer, 100, &timestamp)) {
-		return;
+	std::string lvlToStr(Level lvl) {
+		switch (lvl) {
+		case Level::ERROR:
+			return "ERROR ";
+		case Level::INFO:
+			return "INFO ";
+		case Level::DEBUG:
+			return "DEBUG ";
+		}
+		return "UNDEFINED";
 	}
-	stream << "[" << timeBuffer << "] " << message << '\n';
-	file << stream.str() << std::flush;
+
+	Logger::Logger(std::string logFilePath):
+		file(logFilePath, std::ofstream::out | std::ofstream::trunc) {}
+
+	Logger::~Logger() {
+		file.close();
 }
+
+}
+
+#pragma pop_macro("ERROR")

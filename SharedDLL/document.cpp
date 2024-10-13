@@ -28,6 +28,14 @@ std::string Document::getLine(const int lineIndex) const {
 	return data[lineIndex];
 }
 
+std::string Document::getText() const {
+	std::string text;
+	for (const auto& line : data) {
+		text += line;
+	}
+	return text;
+}
+
 const std::vector<std::string>& Document::get() {
 	return data;
 }

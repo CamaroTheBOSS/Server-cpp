@@ -26,6 +26,7 @@ public:
 	bool setCursorPos(COORD newPos);
 	COORD getCursorPos() const;
 	std::string getLine(const int lineIndex) const;
+	std::string getText() const;
 	const std::vector<std::string>& get();
 
 private:

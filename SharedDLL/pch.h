@@ -11,5 +11,6 @@
 #include "framework.h"
 #include "document.h"
 #include "logger.h"
+#include "messages.h"
 
 #endif //PCH_H
