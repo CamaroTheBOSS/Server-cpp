@@ -10,6 +10,7 @@
 #include "document.h"
 #include "messages.h"
 #include "load_balancer.h"
+#include "processor.h"
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -21,7 +22,10 @@ public:
 
 private:
 	void sync(SOCKET dst);
+	void process(int socketCount, FD_SET& connections);
 	void broadcast(msg::Buffer& buffer);
+	void unicast(msg::Buffer& buffer, SOCKET& src);
+	void makeResponse(msg::Buffer& buffer, SOCKET& src);
 
 	void initThreadPool();
 	void removeThread();
@@ -44,4 +48,6 @@ private:
 	Document doc;
 	std::mutex docLock;
 	LoadBalancer loadBalancer;
+	Processor msgProcessor;
+
 };

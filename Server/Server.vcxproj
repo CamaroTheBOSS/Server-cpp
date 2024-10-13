@@ -133,10 +133,12 @@
   <ItemGroup>
     <ClCompile Include="load_balancer.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="processor.cpp" />
     <ClCompile Include="server.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="load_balancer.h" />
+    <ClInclude Include="processor.h" />
     <ClInclude Include="server.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

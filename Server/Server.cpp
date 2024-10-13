@@ -13,7 +13,8 @@ Server::Server(std::string ip, const int port, const int threadPoolSize, std::st
     port(port),
     threadPoolSize(threadPoolSize),
 	logger(logFile),
-    loadBalancer(threadInfos) {
+    loadBalancer(threadInfos),
+    msgProcessor(doc, docLock, logger) {
 		listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (listenSocket == INVALID_SOCKET) {
 			logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when creating listening socket");
@@ -140,54 +141,49 @@ void Server::handleConnection() {
             continue;
         }
         int socketCount = select(0, &threadClients, nullptr, nullptr, nullptr);
-        if (socketCount < 0) {
-            logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when selecting client");
-            continue;
+        process(socketCount, threadClients);
+    }
+}
+
+void Server::process(int socketCount, FD_SET& connections) {
+    if (socketCount < 0) {
+        logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when selecting client");
+        return;
+    }
+    for (int i = 0; i < socketCount; i++) {
+        SOCKET client = connections.fd_array[i];
+        msg::Buffer recvBuff{ 4096 };
+        recvBuff.size = recv(client, recvBuff.get(), recvBuff.capacity, 0);
+        if (recvBuff.size > 0) {
+            makeResponse(recvBuff, client);
         }
-        for (int i = 0; i < socketCount; i++) {
-            SOCKET client = threadClients.fd_array[i];
-            msg::Buffer recvBuff{ 4096 };
-            recvBuff.size = recv(client, recvBuff.get(), recvBuff.capacity, 0);
-            if (recvBuff.size == 1) {
-                logger.log(logs::Level::DEBUG, "Thread ", std::this_thread::get_id(), " got new connection ", client);
-                continue;
-            }
-            if (recvBuff.size > 1) {
-                auto header = msg::Header::parse(recvBuff, 0);
-                if (header.type == msg::MessageType::write) {
-                    auto msg = msg::Write::parse(recvBuff, 0);
-                    std::scoped_lock loc{docLock};
-                    if (doc.setCursorPos(msg.cursorPos)) {
-                        doc.write(msg.msg);
-                        broadcast(recvBuff);
-                        logger.log(logs::Level::INFO, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] wrote '", msg.msg, "'");
-                    }
-                    else {
-                        logger.log(logs::Level::ERROR, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] Cannot place cursor on write msg!");
-                    }
-                }
-                else if (header.type == msg::MessageType::erase) {
-                    auto msg = msg::Erase::parse(recvBuff, 0);
-                    std::scoped_lock loc{docLock};
-                    if (doc.setCursorPos(msg.cursorPos)) {
-                        doc.erase();
-                        broadcast(recvBuff);
-                        logger.log(logs::Level::INFO, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] erased '", msg.eraseSize, "'");
-                    }
-                    else {
-                        logger.log(logs::Level::ERROR, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] Cannot place cursor on erase msg!");
-                    }
-                }
-            }
-            else if (recvBuff.size == 0) {
-                logger.log(logs::Level::DEBUG, "Connection with ", client, " has been closed");
-                shutdownConnection(client);
-            }
-            else {
-                logger.log(logs::Level::ERROR, "Error on receiving data from", client, "! Closing connection");
-                shutdownConnection(client);
-            }
+        else if (recvBuff.size == 0) {
+            logger.log(logs::Level::DEBUG, "Connection with ", client, " has been closed");
+            shutdownConnection(client);
         }
+        else {
+            logger.log(logs::Level::ERROR, "Error on receiving data from", client, "! Closing connection");
+            shutdownConnection(client);
+        }
+    }
+}
+
+void Server::makeResponse(msg::Buffer& buffer, SOCKET& src) {
+    auto responseType = msgProcessor.processMessage(buffer);
+    switch (responseType) {
+    case ResponseType::unicast:
+        return unicast(buffer, src);
+    case ResponseType::broadcast:
+        return broadcast(buffer);
+    case ResponseType::none:
+        break;
+    }
+}
+
+void Server::unicast(msg::Buffer& buffer, SOCKET& src) {
+    int sendBytes = send(src, buffer.get(), buffer.size, 0);
+    if (sendBytes < 0) {
+        logger.log(logs::Level::ERROR, "Error on responding to ", src);
     }
 }
 
