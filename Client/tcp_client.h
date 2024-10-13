@@ -5,6 +5,7 @@
 #include "terminal.h"
 #include "document.h"
 #include "messages.h"
+#include "processor.h"
 #include "logger.h"
 
 #pragma once
@@ -26,7 +27,7 @@ private:
 	
 	std::string srvIp;
 	int srvPort;
-	sockaddr_in srvAddress;
+	sockaddr_in srvAddress = {0};
 
 	SOCKET client;
 	std::thread recvThread;
@@ -34,4 +35,5 @@ private:
 	Document& doc;
 	TerminalManager& terminal;
 	logs::Logger logger;
+	Processor msgProcessor;
 };

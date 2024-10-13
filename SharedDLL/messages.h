@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <assert.h>
+#include <memory>
 
 #include <winsock2.h>
 #include "windows.h"

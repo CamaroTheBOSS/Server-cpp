@@ -132,10 +132,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="processor.cpp" />
     <ClCompile Include="tcp_client.cpp" />
     <ClCompile Include="terminal.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="processor.h" />
     <ClInclude Include="tcp_client.h" />
     <ClInclude Include="terminal.h" />
   </ItemGroup>

@@ -12,7 +12,8 @@ Client::Client(std::string username, std::string srvIp, const int srvPort, std::
     srvPort(srvPort),
     doc(doc),
     terminal(terminal),
-    logger(logFile) {
+    logger(logFile),
+    msgProcessor(doc, terminal, logger) {
 
     client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (client == INVALID_SOCKET) {
@@ -42,45 +43,11 @@ void Client::disconnect() {
 }
 
 void Client::recvMsg() {
-    // TODO when its response for my msg set cursor to original cursor pos;
     while (true) {
         msg::Buffer recvBuff{4096};
         recvBuff.size = recv(client, recvBuff.get(), recvBuff.capacity, 0);
         if (recvBuff.size > 0) {
-            auto header = msg::Header::parse(recvBuff, 0);
-            if (header.type == msg::MessageType::write) {
-                auto msg = msg::Write::parse(recvBuff, 0);
-                COORD docCursorPos = doc.getCursorPos();
-                if (doc.setCursorPos(msg.cursorPos)) {
-                    doc.write(msg.msg);
-                    /*if (!msg.isResponse) {
-                        document.setCursorPos(docCursorPos);
-                    }*/
-                    logger.log(logs::Level::INFO, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] wrote '", msg.msg, "'");
-                }
-                else {
-                    logger.log(logs::Level::ERROR, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] Cannot place cursor on write msg!");
-                }
-                terminal.render();
-            }
-            else if (header.type == msg::MessageType::erase) {
-                auto msg = msg::Erase::parse(recvBuff, 0);
-                COORD docCursorPos = doc.getCursorPos();
-                if (doc.setCursorPos(msg.cursorPos)) {
-                    for (int i = 0; i < msg.eraseSize; i++) {
-                        doc.erase();
-                    }
-                    /*if (!msg.isResponse) {
-                        document.setCursorPos(docCursorPos);
-                    }*/
-                    logger.log(logs::Level::INFO, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] erased ", msg.eraseSize, " letters");
-                }
-                else {
-                    logger.log(logs::Level::ERROR, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] Cannot place cursor on erase msg!");
-                }
-                terminal.render();
-            }
-            
+            msgProcessor.processMessage(recvBuff);
         }
         else if (recvBuff.size == 0) {
             disconnect();
