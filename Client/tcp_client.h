@@ -15,7 +15,8 @@ public:
 		Document& doc, TerminalManager& terminal);
 
 	int connectToServer();
-	void sendMsg(const COORD& cursorPos, const std::string& content);
+	void sendWriteMsg(const COORD& cursorPos, const std::string& content);
+	void sendEraseMsg(const COORD& cursorPos, const int eraseSize);
 
 private:
 	void disconnect();

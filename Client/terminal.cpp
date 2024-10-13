@@ -98,7 +98,7 @@ void TerminalManager::render(){
             tLineCounter++;
         }
     }
-    if (toPrint[toPrint.size() - 1] == '\n') {
+    if (!toPrint.empty() && toPrint[toPrint.size() - 1] == '\n') {
         toPrint[toPrint.size() - 1] = ' ';
     }
     if (tLineCounter <= screenInfo.srWindow.Bottom) {

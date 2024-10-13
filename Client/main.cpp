@@ -35,19 +35,19 @@ int main()
         COORD docCursorPos = doc.getCursorPos();
         if (keyCode >= 32 && keyCode <= 127) {
             char letter = static_cast<char>(keyCode);
-            tcpClient.sendMsg(docCursorPos, std::string{letter});
+            tcpClient.sendWriteMsg(docCursorPos, std::string{letter});
             continue;
         }
         std::string msg;
         switch (keyCode) {
         case ENTER:
-            tcpClient.sendMsg(docCursorPos, "\n");
+            tcpClient.sendWriteMsg(docCursorPos, "\n");
             break;
         case TABULAR:
-            tcpClient.sendMsg(docCursorPos, "    ");
+            tcpClient.sendWriteMsg(docCursorPos, "    ");
             break;
         case BACKSPACE:
-            doc.erase();
+            tcpClient.sendEraseMsg(docCursorPos, 1);
             break;
         case ARROW_LEFT:
             doc.moveCursorLeft();

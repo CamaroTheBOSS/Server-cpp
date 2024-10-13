@@ -42,6 +42,7 @@ void Client::disconnect() {
 }
 
 void Client::recvMsg() {
+    // TODO when its response for my msg set cursor to original cursor pos;
     while (true) {
         msg::Buffer recvBuff{4096};
         recvBuff.size = recv(client, recvBuff.get(), recvBuff.capacity, 0);
@@ -64,6 +65,20 @@ void Client::recvMsg() {
             }
             else if (header.type == msg::MessageType::erase) {
                 auto msg = msg::Erase::parse(recvBuff, 0);
+                COORD docCursorPos = doc.getCursorPos();
+                if (doc.setCursorPos(msg.cursorPos)) {
+                    for (int i = 0; i < msg.eraseSize; i++) {
+                        doc.erase();
+                    }
+                    /*if (!msg.isResponse) {
+                        document.setCursorPos(docCursorPos);
+                    }*/
+                    logger.log(logs::Level::INFO, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] erased ", msg.eraseSize, " letters");
+                }
+                else {
+                    logger.log(logs::Level::ERROR, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] Cannot place cursor on erase msg!");
+                }
+                terminal.render();
             }
             
         }
@@ -80,8 +95,20 @@ void Client::recvMsg() {
     return;
 }
 
-void Client::sendMsg(const COORD& cursorPos, const std::string& content) {
+void Client::sendWriteMsg(const COORD& cursorPos, const std::string& content) {
     msg::Write msg{1, 1, cursorPos, content};
+    msg::Buffer buff{4096};
+    msg.serializeTo(buff);
+    int sendBytes = send(client, buff.get(), buff.size, 0);
+    if (sendBytes < 0) {
+        logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when sending data to server");
+        disconnect();
+        return;
+    }
+}
+
+void Client::sendEraseMsg(const COORD& cursorPos, const int eraseSize) {
+    msg::Erase msg{1, 1, cursorPos, eraseSize};
     msg::Buffer buff{4096};
     msg.serializeTo(buff);
     int sendBytes = send(client, buff.get(), buff.size, 0);

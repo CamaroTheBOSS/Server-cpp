@@ -16,7 +16,7 @@ int main() {
         return -1;
     }
 
-    Server server{ "192.168.1.10", 8081, 8, "server.log"};
+    Server server{ "192.168.1.10", 8081, 2, "server.log"};
     server.open();
     server.close();
     WSACleanup();
