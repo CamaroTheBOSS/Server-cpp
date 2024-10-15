@@ -18,8 +18,15 @@
 namespace msg {
 
 using OneByteInt = unsigned char;
-
-enum class MessageType { write, erase, sync };
+/*
+	Write: Header CursorPos letters (for writing to doc) -> returns same Write msg
+	Erase: Header CursorPos eraseSize (for erasing from doc) -> returns same Erase msg
+	Login: Header nickname (for login into system -> returning userId) -> returns same login msg
+	Create: Header filename (for creating new doc) -> returns Header docId
+	Load: Header filename (for loading existing doc) -> returns Header docId
+	Join: Header docId (for joining to specific session) -> returns Header documentData
+*/
+enum class MessageType { write, erase, login, create, load, join};
 
 class MESSAGE_API Buffer {
 public:
@@ -68,17 +75,6 @@ public:
 	int size;
 };
 
-class MESSAGE_API Sync {
-public:
-	Sync(const int version, const int userId, std::string msg);
-	static Sync parse(Buffer& buffer, const int pos);
-	void serializeTo(Buffer& buffer);
-
-	Header header;
-	std::string msg;
-	int size;
-};
-
 class MESSAGE_API Erase {
 public:
 	Erase(const int version, const int userId, COORD cursorPos, const int eraseSize);
@@ -88,6 +84,17 @@ public:
 	Header header;
 	COORD cursorPos;
 	int eraseSize;
+	int size;
+};
+
+class MESSAGE_API StrMessage {
+public:
+	StrMessage(MessageType type, const int version, const int userId, std::string msg);
+	static StrMessage parse(Buffer& buffer, const int pos);
+	void serializeTo(Buffer& buffer);
+
+	Header header;
+	std::string msg;
 	int size;
 };
 

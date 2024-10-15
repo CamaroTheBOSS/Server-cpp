@@ -15,8 +15,8 @@ void Processor::processMessage(msg::Buffer& buffer) {
 		return processWriteMsg(buffer);
 	case msg::MessageType::erase:
 		return processEraseMsg(buffer);
-	case msg::MessageType::sync:
-		return processSyncMsg(buffer);
+	case msg::MessageType::load:
+		return processLoadMsg(buffer);
 	}
 	logger.log(logs::Level::ERROR, "Unknown header type in incoming message");
 }
@@ -57,7 +57,7 @@ void Processor::processEraseMsg(msg::Buffer& buffer) {
 	terminal.render();
 }
 
-void Processor::processSyncMsg(msg::Buffer& buffer) {
+void Processor::processLoadMsg(msg::Buffer& buffer) {
 
 }
 

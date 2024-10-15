@@ -62,22 +62,6 @@ namespace msg {
 		return Write{ header.version, header.userId, COORD{cursorPosX, cursorPosY}, msg };
 	}
 
-	Sync::Sync(const int version, const int userId, std::string msg) :
-		header(MessageType::sync, version, userId),
-		msg(std::move(msg)),
-		size(header.size + this->msg.size() + 1) {}
-
-	void Sync::serializeTo(Buffer& buffer) {
-		header.serializeTo(buffer);
-		buffer.add(&msg);
-	}
-
-	Sync Sync::parse(Buffer& buffer, const int pos) {
-		Header header = Header::parse(buffer, 0);
-		const std::string msg{ buffer.get() + header.size };
-		return Sync{ header.version, header.userId, msg };
-	}
-
 	Erase::Erase(const int version, const int userId, COORD cursorPos, const int eraseSize) :
 		header(MessageType::erase, version, userId),
 		cursorPos(std::move(cursorPos)),
@@ -105,5 +89,24 @@ namespace msg {
 		int eraseSize = static_cast<int>(ntohl(eraseSizeBuf));
 		return Erase{ header.version, header.userId, COORD{cursorPosX, cursorPosY}, eraseSize };
 	}
+
+	StrMessage::StrMessage(MessageType type, const int version, const int userId, std::string msg) :
+		header(type, version, userId),
+		msg(std::move(msg)),
+		size(header.size + this->msg.size() + 1) {
+		assert(type != MessageType::write && type != MessageType::erase);
+	}
+
+	void StrMessage::serializeTo(Buffer& buffer) {
+		header.serializeTo(buffer);
+		buffer.add(&msg);
+	}
+
+	StrMessage StrMessage::parse(Buffer& buffer, const int pos) {
+		Header header = Header::parse(buffer, 0);
+		const std::string msg{ buffer.get() + header.size };
+		return StrMessage{ header.type, header.version, header.userId, msg };
+	}
+
 
 }

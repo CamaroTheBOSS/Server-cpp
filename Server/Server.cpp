@@ -62,22 +62,22 @@ void Server::open() {
 }
 
 void Server::sync(SOCKET dst) {
-    // TODO Support for messages sent in chunks, cause 4096 buffer can be easly overflowed
-    std::string text = doc.getText();
-    if (text.empty()) {
-        return;
-    }
-    msg::Sync msg{1, 0, text};
-    msg::Buffer sendBuff{ 4096 };
-    msg.serializeTo(sendBuff);
-    int sendBytes = send(dst, sendBuff.get(), sendBuff.size, 0);
-    if (sendBytes < 0) {
-        closesocket(dst);
-        shutdown(dst, SD_SEND);
-        logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error on document synchronization with ", dst);
-        return;
-    }
-    logger.log(logs::Level::DEBUG, "Document has been synchronized with ", dst);
+    //// TODO Support for messages sent in chunks, cause 4096 buffer can be easly overflowed
+    //std::string text = doc.getText();
+    //if (text.empty()) {
+    //    return;
+    //}
+    //msg::Sync msg{1, 0, text};
+    //msg::Buffer sendBuff{ 4096 };
+    //msg.serializeTo(sendBuff);
+    //int sendBytes = send(dst, sendBuff.get(), sendBuff.size, 0);
+    //if (sendBytes < 0) {
+    //    closesocket(dst);
+    //    shutdown(dst, SD_SEND);
+    //    logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error on document synchronization with ", dst);
+    //    return;
+    //}
+    //logger.log(logs::Level::DEBUG, "Document has been synchronized with ", dst);
 }
 
 void Server::initThreadPool() {

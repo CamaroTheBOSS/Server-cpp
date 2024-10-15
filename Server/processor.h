@@ -14,7 +14,7 @@ private:
 	ResponseType processNewConnectionMsg(msg::Buffer& buffer);
 	ResponseType processWriteMsg(msg::Buffer& buffer);
 	ResponseType processEraseMsg(msg::Buffer& buffer);
-	ResponseType processSyncMsg(msg::Buffer& buffer);
+	ResponseType processLoadMsg(msg::Buffer& buffer);
 
 	Document& doc;
 	std::mutex& docLock;

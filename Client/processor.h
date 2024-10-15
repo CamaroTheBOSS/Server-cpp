@@ -12,7 +12,7 @@ public:
 private:
 	void processWriteMsg(msg::Buffer& buffer);
 	void processEraseMsg(msg::Buffer& buffer);
-	void processSyncMsg(msg::Buffer& buffer);
+	void processLoadMsg(msg::Buffer& buffer);
 
 	Document& doc;
 	TerminalManager& terminal;

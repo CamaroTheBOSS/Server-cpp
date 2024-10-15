@@ -131,12 +131,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="database.cpp" />
     <ClCompile Include="load_balancer.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="processor.cpp" />
     <ClCompile Include="server.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="database.h" />
     <ClInclude Include="load_balancer.h" />
     <ClInclude Include="processor.h" />
     <ClInclude Include="server.h" />

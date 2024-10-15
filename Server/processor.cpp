@@ -21,8 +21,8 @@ ResponseType Processor::processMessage(msg::Buffer& buffer) {
 		return processWriteMsg(buffer);
 	case msg::MessageType::erase:
 		return processEraseMsg(buffer);
-	case msg::MessageType::sync:
-		return processSyncMsg(buffer);
+	case msg::MessageType::load:
+		return processLoadMsg(buffer);
 	}
 	logger.log(logs::Level::ERROR, "Unknown header type in incoming message");
 }
@@ -58,7 +58,7 @@ ResponseType Processor::processEraseMsg(msg::Buffer& buffer) {
 	return ResponseType::broadcast;
 }
 
-ResponseType Processor::processSyncMsg(msg::Buffer& buffer) {
+ResponseType Processor::processLoadMsg(msg::Buffer& buffer) {
 	return ResponseType::unicast;
 }
 
