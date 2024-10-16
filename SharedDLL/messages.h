@@ -26,7 +26,7 @@ using OneByteInt = unsigned char;
 	Load: Header filename (for loading existing doc) -> returns Header docId
 	Join: Header docId (for joining to specific session) -> returns Header documentData
 */
-enum class MessageType { write, erase, login, create, load, join};
+enum class MessageType { registration, login, create, load, join, write, erase};
 
 class MESSAGE_API Buffer {
 public:
@@ -50,51 +50,100 @@ public:
 	const int capacity;
 };
 
-
 class MESSAGE_API Header {
 public:
-	Header(MessageType type, const int version, const int userId);
-	static Header parse(Buffer& buffer, const int pos);
-	void serializeTo(Buffer& buffer);
-
+	Header(MessageType type, const int version, const int errCode);
+	static Header parse(Buffer& buffer);
+	void serializeTo(Buffer& buffer) const;
 	MessageType type;
 	int version;
-	int userId;
-	const int size = 2 * sizeof(OneByteInt) + sizeof(u_long);
+	int errCode;
+	const int size = 3 * sizeof(OneByteInt);
+};
+
+class MESSAGE_API Register {
+public:
+	Register(const int version, const int errCode, const std::string& username, const std::string& password);
+	static Register parse(Buffer& buffer);
+	void serializeTo(Buffer& buffer) const;
+
+	Header header;
+	std::string username;
+	std::string password;
+	int size;
+};
+
+class MESSAGE_API Login {
+public:
+	Login(const int version, const int errCode, const std::string& username, const std::string& password);
+	static Login parse(Buffer& buffer);
+	void serializeTo(Buffer& buffer) const;
+
+	Header header;
+	std::string username;
+	std::string password;
+	int size;
+};
+
+class MESSAGE_API Create {
+public:
+	Create(const int version, const int errCode, const std::string& token, const std::string& filename);
+	static Create parse(Buffer& buffer);
+	void serializeTo(Buffer& buffer) const;
+
+	Header header;
+	std::string token;
+	std::string filename;
+	int size;
+};
+
+class MESSAGE_API Load {
+public:
+	Load(const int version, const int errCode, const std::string& token, const std::string& filename);
+	static Load parse(Buffer& buffer);
+	void serializeTo(Buffer& buffer) const;
+
+	Header header;
+	std::string token;
+	std::string filename;
+	int size;
+};
+
+class MESSAGE_API Join {
+public:
+	Join(const int version, const int errCode, const std::string& token, const std::string& accessCode);
+	static Join parse(Buffer& buffer);
+	void serializeTo(Buffer& buffer) const;
+
+	Header header;
+	std::string token;
+	std::string accessCode;
+	int size;
 };
 
 class MESSAGE_API Write {
 public:
-	Write(const int version, const int userId, COORD cursorPos, std::string msg);
+	Write(const int version, const int errCode, const std::string& token, const COORD& cursorPos, const std::string& text);
 	static Write parse(Buffer& buffer, const int pos);
 	void serializeTo(Buffer& buffer);
 
 	Header header;
+	std::string token;
 	COORD cursorPos;
-	std::string msg;
+	std::string text;
 	int size;
 };
 
 class MESSAGE_API Erase {
 public:
-	Erase(const int version, const int userId, COORD cursorPos, const int eraseSize);
+	Erase(const int version, const int errCode, const std::string& token, const COORD& cursorPos, const int eraseSize);
 	static Erase parse(Buffer& buffer, const int pos);
 	void serializeTo(Buffer& buffer);
 
 	Header header;
+	std::string token;
 	COORD cursorPos;
 	int eraseSize;
-	int size;
-};
-
-class MESSAGE_API StrMessage {
-public:
-	StrMessage(MessageType type, const int version, const int userId, std::string msg);
-	static StrMessage parse(Buffer& buffer, const int pos);
-	void serializeTo(Buffer& buffer);
-
-	Header header;
-	std::string msg;
 	int size;
 };
 
