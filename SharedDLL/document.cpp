@@ -8,6 +8,18 @@ Document::Document() {
 	data.reserve(1024);
 }
 
+Document::Document(const std::string& text) {
+	std::vector<std::string> textData;
+	int offset = 0;
+	int endLinePos = 0;
+	while ((endLinePos = text.find('\n', offset)) != std::string::npos) {
+		textData.emplace_back(text.substr(offset, endLinePos - offset + 1));
+		offset = endLinePos + 1;
+	}
+	textData.emplace_back(text.substr(offset, text.size() - offset));
+	data = std::move(textData);
+}
+
 bool Document::setCursorPos(COORD newPos) {
 	if (data.size() <= newPos.Y || data[newPos.Y].size() < newPos.X) {
 		return false;
@@ -98,6 +110,21 @@ COORD Document::erase() {
 	}
 	offset = cursorPos.X;
 	return cursorPos;
+}
+
+COORD Document::erase(const int eraseSize) {
+	for (int i = 0; i < eraseSize; i++) {
+		erase();
+	}
+	return cursorPos;
+}
+
+std::string Document::submit() {
+	std::string txt = getText();
+	data = { "" };
+	cursorPos = COORD{ 0, 0 };
+	offset = 0;
+	return txt;
 }
 
 COORD Document::moveCursorLeft() {

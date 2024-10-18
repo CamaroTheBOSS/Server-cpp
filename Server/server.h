@@ -7,10 +7,9 @@
 #include <winsock2.h>
 
 #include "logger.h"
-#include "document.h"
 #include "messages.h"
 #include "load_balancer.h"
-#include "processor.h"
+#include "repository.h"
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -46,8 +45,7 @@ private:
 
 	logs::Logger logger;
 	Document doc;
-	std::mutex docLock;
+	Repository repo;
 	LoadBalancer loadBalancer;
-	Processor msgProcessor;
 
 };

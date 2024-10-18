@@ -13,8 +13,8 @@ Server::Server(std::string ip, const int port, const int threadPoolSize, std::st
     port(port),
     threadPoolSize(threadPoolSize),
 	logger(logFile),
-    loadBalancer(threadInfos),
-    msgProcessor(doc, docLock, logger) {
+    repo("users.csv", "docs.csv", logger),
+    loadBalancer(threadInfos) {
 		listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (listenSocket == INVALID_SOCKET) {
 			logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when creating listening socket");
@@ -44,7 +44,6 @@ void Server::open() {
             closesocket(newConnection);
             continue;
         }
-        sync(newConnection);
         ThreadMapIterator threadInfo;
         {
             std::scoped_lock lock{threadInfosLock};
@@ -59,25 +58,6 @@ void Server::open() {
         logger.log(logs::Level::DEBUG, "Connection ", newConnection, " has been forwarded to thread ", threadInfo->first);
     }
     return;
-}
-
-void Server::sync(SOCKET dst) {
-    //// TODO Support for messages sent in chunks, cause 4096 buffer can be easly overflowed
-    //std::string text = doc.getText();
-    //if (text.empty()) {
-    //    return;
-    //}
-    //msg::Sync msg{1, 0, text};
-    //msg::Buffer sendBuff{ 4096 };
-    //msg.serializeTo(sendBuff);
-    //int sendBytes = send(dst, sendBuff.get(), sendBuff.size, 0);
-    //if (sendBytes < 0) {
-    //    closesocket(dst);
-    //    shutdown(dst, SD_SEND);
-    //    logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error on document synchronization with ", dst);
-    //    return;
-    //}
-    //logger.log(logs::Level::DEBUG, "Document has been synchronized with ", dst);
 }
 
 void Server::initThreadPool() {
@@ -169,12 +149,12 @@ void Server::process(int socketCount, FD_SET& connections) {
 }
 
 void Server::makeResponse(msg::Buffer& buffer, SOCKET& src) {
-    auto responseType = msgProcessor.processMessage(buffer);
+    auto [outBuffer, responseType] = repo.process(buffer);
     switch (responseType) {
     case ResponseType::unicast:
-        return unicast(buffer, src);
+        return unicast(outBuffer, src);
     case ResponseType::broadcast:
-        return broadcast(buffer);
+        return broadcast(outBuffer);
     case ResponseType::none:
         break;
     }

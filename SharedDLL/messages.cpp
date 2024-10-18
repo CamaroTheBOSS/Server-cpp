@@ -12,14 +12,27 @@ namespace msg {
 		return data.get();
 	}
 
+	void Buffer::clear() {
+		memset(data.get(), 0, capacity);
+		size = 0;
+	}
+
 	template<typename T>
-	int parse(T& obj, Buffer& buffer, const int offset) {
+	int parseObj(T& obj, Buffer& buffer, const int offset) {
 		memcpy(&obj, buffer.get() + offset, sizeof(T));
 		return sizeof(T);
 	}
-	int parse(std::string& obj, Buffer& buffer, const int offset) {
+	int parseObj(std::string& obj, Buffer& buffer, const int offset) {
 		obj = std::string{ buffer.get() + offset };
 		return obj.size() + 1;
+	}
+
+	template<typename... Args>
+	int parseMultipleObjs(Buffer& buffer, int pos, Args&... args) {
+		([&] {
+			pos += parseObj(args, buffer, pos);
+			} (), ...);
+		return pos;
 	}
 
 	Header::Header(MessageType type, const int version, const int errCode) :
@@ -28,10 +41,8 @@ namespace msg {
 		errCode(errCode) {}
 
 	Header Header::parse(Buffer& buffer) {
-		OneByteInt versionBuf, typeBuf, errCodeBuf;
-		memcpy(&versionBuf, buffer.get(), sizeof(OneByteInt));
-		memcpy(&typeBuf, buffer.get() + sizeof(OneByteInt), sizeof(OneByteInt));
-		memcpy(&errCodeBuf, buffer.get() + 2 * sizeof(OneByteInt), sizeof(OneByteInt));
+		OneByteInt versionBuf, typeBuf, errCodeBuf; int pos = 0;
+		parseMultipleObjs(buffer, 0, versionBuf, typeBuf, errCodeBuf);
 		const MessageType type = static_cast<MessageType>(typeBuf);
 		return Header{ type, versionBuf, errCodeBuf };
 	}
@@ -49,16 +60,17 @@ namespace msg {
 	Register::Register(const int version, const int errCode, const std::string& username, const std::string& password) :
 		header(MessageType::registration, version, errCode),
 		username(username),
-		password(password) {}
+		password(password),
+		size(header.size + username.size() + password.size() + 2) {}
 
 	Register Register::parse(Buffer& buffer) {
 		Header header = Header::parse(buffer);
-		const std::string username{ buffer.get() + header.size};
-		const std::string password{ buffer.get() + header.size + username.size() + 1};
+		std::string username, password;
+		parseMultipleObjs(buffer, header.size, username, password);
 		return Register{ header.version, header.errCode, username, password};
 	}
 
-	void Register::serializeTo(Buffer& buffer) const {
+	void Register::serializeTo(Buffer& buffer) {
 		header.serializeTo(buffer);
 		buffer.add(&username);
 		buffer.add(&password);
@@ -68,16 +80,17 @@ namespace msg {
 	Login::Login(const int version, const int errCode, const std::string& username, const std::string& password) :
 		header(MessageType::login, version, errCode),
 		username(username),
-		password(password) {}
+		password(password),
+		size(header.size + username.size() + password.size() + 2) {}
 
 	Login Login::parse(Buffer& buffer) {
 		Header header = Header::parse(buffer);
-		const std::string username{ buffer.get() + header.size};
-		const std::string password{ buffer.get() + header.size + username.size() + 1};
+		std::string username, password;
+		parseMultipleObjs(buffer, header.size, username, password);
 		return Login{ header.version, header.errCode, username, password };
 	}
 
-	void Login::serializeTo(Buffer& buffer) const {
+	void Login::serializeTo(Buffer& buffer) {
 		header.serializeTo(buffer);
 		buffer.add(&username);
 		buffer.add(&password);
@@ -87,16 +100,17 @@ namespace msg {
 	Create::Create(const int version, const int errCode, const std::string& token, const std::string& filename) :
 		header(MessageType::create, version, errCode),
 		token(token),
-		filename(filename) {}
+		filename(filename),
+		size(header.size + token.size() + filename.size() + 2) {}
 
 	Create Create::parse(Buffer& buffer) {
 		Header header = Header::parse(buffer);
-		const std::string token{ buffer.get() + header.size};
-		const std::string filename{ buffer.get() + header.size + token.size() + 1};
+		std::string token, filename;
+		parseMultipleObjs(buffer, header.size, token, filename);
 		return Create{ header.version, header.errCode, token, filename };
 	}
 
-	void Create::serializeTo(Buffer& buffer) const {
+	void Create::serializeTo(Buffer& buffer) {
 		header.serializeTo(buffer);
 		buffer.add(&token);
 		buffer.add(&filename);
@@ -106,16 +120,17 @@ namespace msg {
 	Load::Load(const int version, const int errCode, const std::string& token, const std::string& filename) :
 		header(MessageType::load, version, errCode),
 		token(token),
-		filename(filename) {}
+		filename(filename),
+		size(header.size + token.size() + filename.size() + 2) {}
 
 	Load Load::parse(Buffer& buffer) {
 		Header header = Header::parse(buffer);
-		const std::string token{ buffer.get() + header.size};
-		const std::string filename{ buffer.get() + header.size + token.size() + 1};
+		std::string token, filename;
+		parseMultipleObjs(buffer, header.size, token, filename);
 		return Load{ header.version, header.errCode, token, filename };
 	}
 
-	void Load::serializeTo(Buffer& buffer) const {
+	void Load::serializeTo(Buffer& buffer) {
 		header.serializeTo(buffer);
 		buffer.add(&token);
 		buffer.add(&filename);
@@ -125,16 +140,17 @@ namespace msg {
 	Join::Join(const int version, const int errCode, const std::string& token, const std::string& accessCode) :
 		header(MessageType::join, version, errCode),
 		token(token),
-		accessCode(accessCode) {}
+		accessCode(accessCode),
+		size(header.size + token.size() + accessCode.size() + 2) {}
 
 	Join Join::parse(Buffer& buffer) {
 		Header header = Header::parse(buffer);
-		const std::string token{ buffer.get() + header.size};
-		const std::string accessCode{ buffer.get() + header.size + token.size() + 1};
+		std::string token, accessCode;
+		parseMultipleObjs(buffer, header.size, token, accessCode);
 		return Join{ header.version, header.errCode, token, accessCode };
 	}
 
-	void Join::serializeTo(Buffer& buffer) const {
+	void Join::serializeTo(Buffer& buffer) {
 		header.serializeTo(buffer);
 		buffer.add(&token);
 		buffer.add(&accessCode);
@@ -146,7 +162,7 @@ namespace msg {
 		token(token),
 		cursorPos(cursorPos),
 		text(text),
-		size(header.size + 2 * sizeof(u_short) + text.size() + 1) {}
+		size(header.size + 2 * sizeof(u_short) + token.size() + text.size() + 2) {}
 
 	void Write::serializeTo(Buffer& buffer) {
 		header.serializeTo(buffer);
@@ -158,24 +174,22 @@ namespace msg {
 		buffer.add(&text);
 	}
 
-	Write Write::parse(Buffer& buffer, const int pos) {
+	Write Write::parse(Buffer& buffer) {
 		Header header = Header::parse(buffer);
-		const std::string token{ buffer.get() + header.size};
-		u_short cursorX, cursorY;
-		memcpy(&cursorX, buffer.get() + header.size + token.size() + 1, sizeof(u_short));
-		memcpy(&cursorY, buffer.get() + header.size + token.size() + 1 + sizeof(u_short), sizeof(u_short));
-		const std::string text{ buffer.get() + header.size + token.size() + 1 + 2 * sizeof(u_short) };
+		std::string token, text; u_short cursorX, cursorY;
+		parseMultipleObjs(buffer, header.size, token, cursorX, cursorY, text);
 		SHORT cursorPosX = static_cast<SHORT>(ntohs(cursorX));
 		SHORT cursorPosY = static_cast<SHORT>(ntohs(cursorY));
 		return Write{ header.version, header.errCode, token, COORD{cursorPosX, cursorPosY}, text };
 	}
+
 
 	Erase::Erase(const int version, const int errCode, const std::string& token, const COORD& cursorPos, const int eraseSize) :
 		header(MessageType::erase, version, errCode),
 		token(token),
 		cursorPos(cursorPos),
 		eraseSize(eraseSize),
-		size(header.size + 2 * sizeof(u_short) + sizeof(u_long)) {}
+		size(header.size + 2 * sizeof(u_short) + sizeof(u_long) + token.size() + 1) {}
 
 	void Erase::serializeTo(Buffer& buffer) {
 		header.serializeTo(buffer);
@@ -188,17 +202,13 @@ namespace msg {
 		buffer.add(&eraseSizeByte);
 	}
 
-	Erase Erase::parse(Buffer& buffer, const int pos) {
+	Erase Erase::parse(Buffer& buffer) {
 		Header header = Header::parse(buffer);
-		const std::string token{ buffer.get() + header.size};
-		u_short cursorX, cursorY; u_long eraseSizeBuf;
-		memcpy(&cursorX, buffer.get() + header.size + token.size() + 1, sizeof(u_short));
-		memcpy(&cursorY, buffer.get() + header.size + token.size() + 1 + sizeof(u_short), sizeof(u_short));
-		memcpy(&eraseSizeBuf, buffer.get() + token.size() + 1 + header.size + 2 * sizeof(u_short), sizeof(u_long));
+		std::string token; u_short cursorX, cursorY; u_long eraseSizeBuf;
+		parseMultipleObjs(buffer, header.size, token, cursorX, cursorY, eraseSizeBuf);
 		SHORT cursorPosX = static_cast<SHORT>(ntohs(cursorX));
 		SHORT cursorPosY = static_cast<SHORT>(ntohs(cursorY));
 		int eraseSize = static_cast<int>(ntohl(eraseSizeBuf));
 		return Erase{ header.version, header.errCode, token, COORD{cursorPosX, cursorPosY}, eraseSize };
 	}
-
 }

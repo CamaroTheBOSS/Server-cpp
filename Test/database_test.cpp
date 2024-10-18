@@ -3,7 +3,9 @@
 
 #include "database.h"
 
-TEST(CreateUserTest, DatabaseTests) {
+const std::string userId = "randomId";
+
+TEST(DatabaseTests, CreateUserTest) {
 	std::string dbPath = "CreateUserTest.csv";
 	logs::Logger logger("test.log");
 	db::Database<db::User> db{dbPath, logger};
@@ -17,7 +19,7 @@ TEST(CreateUserTest, DatabaseTests) {
 	EXPECT_FALSE(std::remove(dbPath.c_str()));
 }
 
-TEST(CreateUserWithTheSameUuidTest, DatabaseTests) {
+TEST(DatabaseTests, CreateUserWithTheSameUuidTest) {
 	std::string dbPath = "CreateUserWithTheSameUuidTest.csv";
 	logs::Logger logger("test.log");
 	db::Database<db::User> db{dbPath, logger};
@@ -35,7 +37,7 @@ TEST(CreateUserWithTheSameUuidTest, DatabaseTests) {
 	EXPECT_FALSE(std::remove(dbPath.c_str()));
 }
 
-TEST(CreateUserWithTheSameUsernameTest, DatabaseTests) {
+TEST(DatabaseTests, CreateUserWithTheSameUsernameTest) {
 	std::string dbPath = "CreateUserWithTheSameUsernameTest.csv";
 	logs::Logger logger("test.log");
 	db::Database<db::User> db{dbPath, logger};
@@ -53,7 +55,7 @@ TEST(CreateUserWithTheSameUsernameTest, DatabaseTests) {
 	EXPECT_FALSE(std::remove(dbPath.c_str()));
 }
 
-TEST(CreateMultipleUsersTest, DatabaseTests) {
+TEST(DatabaseTests, CreateMultipleUsersTest) {
 	std::string dbPath = "CreateMultipleUsersTest.csv";
 	logs::Logger logger("test.log");
 	db::Database<db::User> db{dbPath, logger};
@@ -69,25 +71,25 @@ TEST(CreateMultipleUsersTest, DatabaseTests) {
 	EXPECT_FALSE(std::remove(dbPath.c_str()));
 }
 
-TEST(CreateDocTest, DatabaseTests) {
+TEST(DatabaseTests, CreateDocTest) {
 	std::string dbPath = "CreateDocTest.csv";
 	logs::Logger logger("test.log");
 	db::Database<db::Doc> db{dbPath, logger};
 
 	const std::string filename = "filename.txt";
-	db::Doc doc{ filename };
+	db::Doc doc{userId, filename };
 	std::string uuid = db.create(doc);
 	EXPECT_FALSE(uuid.empty());
 	EXPECT_FALSE(std::remove(dbPath.c_str()));
 }
 
-TEST(CreateDocWithTheSameUuidTest, DatabaseTests) {
+TEST(DatabaseTests, CreateDocWithTheSameUuidTest) {
 	std::string dbPath = "CreateDocWithTheSameUuidTest.csv";
 	logs::Logger logger("test.log");
 	db::Database<db::Doc> db{dbPath, logger};
 
 	const std::string filename = "filename.txt";
-	db::Doc doc{ filename };
+	db::Doc doc{ userId, filename };
 	std::string uuid = db.create(doc);
 	EXPECT_FALSE(uuid.empty());
 
@@ -97,21 +99,21 @@ TEST(CreateDocWithTheSameUuidTest, DatabaseTests) {
 	EXPECT_FALSE(std::remove(dbPath.c_str()));
 }
 
-TEST(CreateMultipleDocsTest, DatabaseTests) {
+TEST(DatabaseTests, CreateMultipleDocsTest) {
 	std::string dbPath = "CreateMultipleDocsTest.csv";
 	logs::Logger logger("test.log");
 	db::Database<db::Doc> db{dbPath, logger};
 
 	const std::string baseFilename = "filename.txt";
 	for (int i = 0; i < 10; i++) {
-		db::Doc doc{ std::to_string(i) + baseFilename };
+		db::Doc doc{ userId, std::to_string(i) + baseFilename };
 		std::string uuid = db.create(doc);
 		EXPECT_FALSE(uuid.empty());
 	}
 	EXPECT_FALSE(std::remove(dbPath.c_str()));
 }
 
-TEST(ReadUserTest, DatabaseTests) {
+TEST(DatabaseTests, ReadUserTest) {
 	std::string uuid = "0081aa72-f4a9-4835-990c-50dbfdb0279c";
 	std::string dbPath = "ReadUserTest.csv";
 	logs::Logger logger("test.log");
@@ -123,18 +125,34 @@ TEST(ReadUserTest, DatabaseTests) {
 	EXPECT_EQ(user.password, "password");
 }
 
-TEST(ReadDocTest, DatabaseTests) {
-	std::string uuid = "41d6c3c0-e1a0-4ade-882c-7b0f64df8d9f";
+TEST(DatabaseTests, ReadUserWithUsernameTest) {
+	std::string username = "username7";
+	std::string uuid = "17a02b66-044a-4037-80a3-f5fdce4456be";
+	std::string password = "password";
+
+	std::string dbPath = "ReadUserTest.csv";
+	logs::Logger logger("test.log");
+	db::Database<db::User> db{dbPath, logger};
+
+	db::User user = db.readWithAttribute(username, 1);
+	EXPECT_EQ(user.uuid, uuid);
+	EXPECT_EQ(user.username, username);
+	EXPECT_EQ(user.password, password);
+}
+
+TEST(DatabaseTests, ReadDocTest) {
+	std::string uuid = "f81d855c-b568-4731-bbd0-330e090aa6ce";
 	std::string dbPath = "ReadDocTest.csv";
 	logs::Logger logger("test.log");
 	db::Database<db::Doc> db{dbPath, logger};
 
 	db::Doc doc = db.read(uuid);
 	EXPECT_EQ(doc.uuid, uuid);
+	EXPECT_EQ(doc.userId, userId);
 	EXPECT_EQ(doc.filename, "5filename.txt");
 }
 
-TEST(UpdateUserTest, DatabaseTests) {
+TEST(DatabaseTests, UpdateUserTest) {
 	std::string dbPath = "UpdateUserTest.csv";
 	std::string uuid = "9f3d9e66-af0e-4f66-bbbc-c714f4c40ebd";
 	std::string updatedUsername = "updatedUsername";
@@ -165,7 +183,7 @@ TEST(UpdateUserTest, DatabaseTests) {
 	EXPECT_FALSE(std::remove(dbPath.c_str()));
 }
 
-TEST(UpdateDocTest, DatabaseTests) {
+TEST(DatabaseTests, UpdateDocTest) {
 	std::string dbPath = "UpdateDocTest.csv";
 	std::string uuid = "babd37e1-e19d-463f-a5af-fcbba13296aa";
 	std::string updatedFilename = "updatedFilename.txt";
@@ -175,15 +193,15 @@ TEST(UpdateDocTest, DatabaseTests) {
 
 	std::ofstream dbFstream(dbPath, std::ostream::out);
 	std::string dbContent =
-		"152fbabb-b49c-4f01-a94c-cde5c628ec55,0filename.txt\n"
-		"586f7fbb-fcff-4d43-8031-cec2ba24003e,1filename.txt\n"
-		"7a8d33a8-134a-4845-95ec-f78d35c0b35f,2filename.txt\n"
-		"babd37e1-e19d-463f-a5af-fcbba13296aa,3filename.txt\n";
+		"152fbabb-b49c-4f01-a94c-cde5c628ec55,randomId,0filename.txt\n"
+		"586f7fbb-fcff-4d43-8031-cec2ba24003e,randomId,1filename.txt\n"
+		"7a8d33a8-134a-4845-95ec-f78d35c0b35f,randomId,2filename.txt\n"
+		"babd37e1-e19d-463f-a5af-fcbba13296aa,randomId,3filename.txt\n";
 	dbFstream << dbContent;
 	dbFstream.close();
 
 	db::Doc doc = db.read(uuid);
-	std::vector<std::string> row = { doc.uuid, updatedFilename };
+	std::vector<std::string> row = { doc.uuid, doc.userId, updatedFilename };
 	db::Doc newDoc{row};
 	bool updated = db.update(newDoc);
 	db::Doc updatedDoc = db.read(uuid);
@@ -195,7 +213,7 @@ TEST(UpdateDocTest, DatabaseTests) {
 	EXPECT_FALSE(std::remove(dbPath.c_str()));
 }
 
-TEST(DeleteUserTest, DatabaseTests) {
+TEST(DatabaseTests, DeleteUserTest) {
 	std::string dbPath = "DeleteUserTest.csv";
 	std::string uuid = "9f3d9e66-af0e-4f66-bbbc-c714f4c40ebd";
 
@@ -221,7 +239,7 @@ TEST(DeleteUserTest, DatabaseTests) {
 	EXPECT_FALSE(std::remove(dbPath.c_str()));
 }
 
-TEST(DeleteDocTest, DatabaseTests) {
+TEST(DatabaseTests, DeleteDocTest) {
 	std::string dbPath = "DeleteDocTest.csv";
 	std::string uuid = "babd37e1-e19d-463f-a5af-fcbba13296aa";
 

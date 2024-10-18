@@ -7,9 +7,13 @@
 
 #include "logger.h"
 
+#pragma push_macro("ERROR")
+#undef ERROR
+
 namespace db {
 
 	std::string generateUUID();
+	std::string generateAccessCode();
 	bool validateStrField(const std::string& str, const std::string& notAllowedLetters);
 
 	template<int... UNIQUENESS_MASK>
@@ -64,19 +68,23 @@ namespace db {
 		std::string password;
 	};
 
-	struct Doc: public Data<1, 0> {
+	struct Doc: public Data<1, 0, 0> {
 		Doc() :
 			Data("", "DOC"),
-			filename("") {}
-		Doc(const std::string& filename) :
+			userId(),
+			filename() {}
+		Doc(const std::string& userId, const std::string& filename) :
 			Data("", "DOC"),
+			userId(userId),
 			filename(filename) {}
 		Doc(const std::string& uuid, const Doc& doc) :
 			Data(uuid, "DOC"),
+			userId(doc.userId),
 			filename(doc.filename) {}
 		Doc(const std::vector<std::string>& row) :
 			Data(row[0], "DOC"),
-			filename(row[1]) {}
+			userId(row[1]),
+			filename(row[2]) {}
 
 		bool valid() const override {
 			if (!validateStrField(filename, ",\n")) {
@@ -85,18 +93,19 @@ namespace db {
 			return true;
 		}
 		std::string str() const override {
-			return uuid + "," + filename;
+			return uuid + "," + userId + ',' + filename;
 		}
 		std::vector<std::string> row() const override {
-			return { uuid, filename };
+			return { uuid, userId, filename };
 		}
+		std::string userId;
 		std::string filename;
 	};
 
 	template<typename OBJ>
 	class Database {
 	public:
-		Database(std::string& dbPath, logs::Logger& logger):
+		Database(const std::string& dbPath, logs::Logger& logger):
 			dbPath(dbPath),
 			logger(logger) {};
 
@@ -124,6 +133,14 @@ namespace db {
 
 		OBJ read(const std::string& uuid) {
 			auto rowDb = getRowWithUuid(uuid);
+			if (rowDb.empty()) {
+				return OBJ{};
+			}
+			return OBJ{ rowDb };
+		}
+
+		OBJ readWithAttribute(const std::string& attr, const int pos) {
+			auto rowDb = getRowWithAttr(attr, pos);
 			if (rowDb.empty()) {
 				return OBJ{};
 			}
@@ -205,6 +222,24 @@ namespace db {
 			return {};
 		}
 
+		std::vector<std::string> getRowWithAttr(const std::string& attr, const int pos) {
+			std::ifstream db(dbPath, std::istream::in);
+			if (!db) {
+				logger.log(logs::Level::ERROR, "Cannot open: " + dbPath + " for read");
+				return {};
+			}
+
+			std::string rowStr;
+			while (std::getline(db, rowStr)) {
+				auto parsedRow = parseRow(rowStr, ',');
+				if (parsedRow[pos] == attr) {
+					return parsedRow;
+				}
+			}
+			logger.log(logs::Level::DEBUG, "Not found obj with attr: " + attr + " from db", dbPath);
+			return {};
+		}
+
 		bool checkUniqueness(const OBJ& obj) const {
 			std::ifstream db(dbPath, std::istream::in);
 			if (!db) {
@@ -247,3 +282,5 @@ namespace db {
 	};
 
 }
+
+#pragma pop_macro("ERROR")

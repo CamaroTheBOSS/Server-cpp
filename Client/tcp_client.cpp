@@ -5,9 +5,8 @@
 #pragma push_macro("ERROR")
 #undef ERROR
 
-Client::Client(std::string username, std::string srvIp, const int srvPort, std::string logFile,
+Client::Client(std::string srvIp, const int srvPort, std::string logFile,
     Document& doc, TerminalManager& terminal) :
-    username(username),
     srvIp(srvIp),
     srvPort(srvPort),
     doc(doc),
@@ -44,10 +43,10 @@ void Client::disconnect() {
 
 void Client::recvMsg() {
     while (true) {
-        msg::Buffer recvBuff{4096};
+        msg::Buffer recvBuff{128};
         recvBuff.size = recv(client, recvBuff.get(), recvBuff.capacity, 0);
         if (recvBuff.size > 0) {
-            msgProcessor.processMessage(recvBuff);
+            msgProcessor.process(recvBuff);
         }
         else if (recvBuff.size == 0) {
             disconnect();
@@ -60,30 +59,6 @@ void Client::recvMsg() {
         }
     }
     return;
-}
-
-void Client::sendWriteMsg(const COORD& cursorPos, const std::string& content) {
-    msg::Write msg{1, 1, cursorPos, content};
-    msg::Buffer buff{4096};
-    msg.serializeTo(buff);
-    int sendBytes = send(client, buff.get(), buff.size, 0);
-    if (sendBytes < 0) {
-        logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when sending data to server");
-        disconnect();
-        return;
-    }
-}
-
-void Client::sendEraseMsg(const COORD& cursorPos, const int eraseSize) {
-    msg::Erase msg{1, 1, cursorPos, eraseSize};
-    msg::Buffer buff{4096};
-    msg.serializeTo(buff);
-    int sendBytes = send(client, buff.get(), buff.size, 0);
-    if (sendBytes < 0) {
-        logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when sending data to server");
-        disconnect();
-        return;
-    }
 }
 
 #pragma pop_macro("ERROR")

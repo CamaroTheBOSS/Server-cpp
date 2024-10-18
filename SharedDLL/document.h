@@ -15,9 +15,12 @@
 class DOCUMENT_API Document {
 public:
 	Document();
+	Document(const std::string& text);
 	COORD write(const char letter);
 	COORD write(const std::string& text);
 	COORD erase();
+	COORD erase(const int eraseSize);
+	std::string submit();
 	COORD moveCursorLeft();
 	COORD moveCursorRight();
 	COORD moveCursorUp(COORD& terminalSize);

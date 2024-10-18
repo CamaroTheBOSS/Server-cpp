@@ -7,7 +7,7 @@
 class Processor {
 public:
 	Processor(Document& doc, TerminalManager& terminal, logs::Logger& logger);
-	void processMessage(msg::Buffer& buffer);
+	void process(msg::Buffer& buffer);
 
 private:
 	void processWriteMsg(msg::Buffer& buffer);

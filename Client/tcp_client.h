@@ -9,21 +9,33 @@
 #include "logger.h"
 
 #pragma once
+#pragma push_macro("ERROR")
+#undef ERROR
 
 class Client {
 public:
-	Client(std::string username, std::string srvIp, const int srvPort, std::string logFile,
+	Client(std::string srvIp, const int srvPort, std::string logFile,
 		Document& doc, TerminalManager& terminal);
 
 	int connectToServer();
-	void sendWriteMsg(const COORD& cursorPos, const std::string& content);
-	void sendEraseMsg(const COORD& cursorPos, const int eraseSize);
+	template<typename MESSAGE, typename... Args>
+	bool sendMsg(Args&&... args) {
+		msg::Buffer buffer{128};
+		MESSAGE msg{ args... };
+		msg.serializeTo(buffer);
+		int sendBytes = send(client, buffer.get(), buffer.size, 0);
+		if (sendBytes < 0) {
+			logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error when sending data to server");
+			disconnect();
+			return false;
+		}
+		return true;
+	}
+
 
 private:
 	void disconnect();
 	void recvMsg();
-	
-	std::string username;
 	
 	std::string srvIp;
 	int srvPort;
@@ -37,3 +49,5 @@ private:
 	logs::Logger logger;
 	Processor msgProcessor;
 };
+
+#pragma pop_macro("ERROR")

@@ -18,20 +18,17 @@
 
 class TerminalManager {
 public:
-    enum class Mode { command, document };
-
-    TerminalManager(Document& document);
+    enum class Mode { none, command, document };
     int readChar() const;
 
     void setMode(Mode mode) const;
     COORD getCursorPos() const;
     void setCursorPos(const COORD& newPos);
-    void render();
-    COORD syncCursors();
+    void render(Document& doc);
+    COORD syncCursors(Document& doc);
     HANDLE getConsoleHandle() const;
 
 private:
-    Document& document;
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
     COORD cursorPos = COORD{0, 0};
 };

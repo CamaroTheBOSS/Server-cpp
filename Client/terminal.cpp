@@ -5,10 +5,6 @@
 
 #include "terminal.h"
 
-
-TerminalManager::TerminalManager(Document& document):
-    document(document) {}
-
 void TerminalManager::setMode(Mode mode) const {
     if (mode == Mode::command) {
 
@@ -30,13 +26,7 @@ void TerminalManager::setMode(Mode mode) const {
                 )
         );
     }
-    RECT r;
-    HWND console = GetConsoleWindow();
-    GetWindowRect(console, &r); //stores the console's current dimensions
-    if (!MoveWindow(console, r.left, r.top, 300, 200, TRUE)) {
-        std::cout << GetLastError();
-        return;
-    }
+    system("cls");
 }
 
 int TerminalManager::readChar() const {
@@ -61,8 +51,8 @@ void TerminalManager::setCursorPos(const COORD& newPos) {
     cursorPos = newPos;
 }
 
-void TerminalManager::render(){
-    COORD correctCursorPos = syncCursors();
+void TerminalManager::render(Document& doc){
+    COORD correctCursorPos = syncCursors(doc);
     CONSOLE_CURSOR_INFO cursorInfo;
     if (!GetConsoleCursorInfo(hConsole, &cursorInfo)) {
         return;
@@ -78,7 +68,7 @@ void TerminalManager::render(){
     setCursorPos(COORD{ 0, screenInfo.srWindow.Top});
     int tLineCounter = 0;
     std::string toPrint;
-    for (const auto& line : document.get()) {
+    for (const auto& line : doc.get()) {
         int head = 0;
         int tail = std::min((int)line.size(), (int)screenInfo.dwSize.X);
         while (head < tail && tLineCounter <= screenInfo.srWindow.Bottom) {
@@ -110,14 +100,14 @@ void TerminalManager::render(){
     SetConsoleCursorInfo(hConsole, &cursorInfo);
 }
 
-COORD TerminalManager::syncCursors() {
+COORD TerminalManager::syncCursors(Document& doc) {
     CONSOLE_SCREEN_BUFFER_INFO cursorInfo;
     if (!GetConsoleScreenBufferInfo(hConsole, &cursorInfo)) {
         return COORD{0, 0};
     }
-    const auto& data = document.get();
+    const auto& data = doc.get();
     COORD terminalCursorPos{ 0, 0 };
-    COORD documentCursorPos = document.getCursorPos();
+    COORD documentCursorPos = doc.getCursorPos();
     for (int i = 0; i <= documentCursorPos.Y; i++) {
         if (data[i].empty()) {
             continue;
