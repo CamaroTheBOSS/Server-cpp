@@ -31,12 +31,17 @@ public:
 		}
 		return true;
 	}
+	std::pair<std::string, int> waitForResponse() {
+		return msgProcessor.waitForResponse();
+	}
+	std::string getUserId();
 
 
 private:
 	void disconnect();
 	void recvMsg();
 	
+	std::string userId;
 	std::string srvIp;
 	int srvPort;
 	sockaddr_in srvAddress = {0};

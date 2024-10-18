@@ -45,6 +45,9 @@ Response Repository::writeToDoc(msg::Buffer& buffer) {
 	auto msg = msg::Write::parse(buffer);
 	std::scoped_lock loc{userActiveDocLock};
 	auto it = userActiveDoc.find(msg.token);
+	if (it == userActiveDoc.end()) {
+		return respondError(buffer, msg.header.version, "Write error");
+	}
 	if (it->second->setCursorPos(msg.cursorPos)) {
 		it->second->write(msg.text);
 		logger.log(logs::Level::INFO, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] wrote '", msg.text, "'");
@@ -59,6 +62,9 @@ Response Repository::eraseFromDoc(msg::Buffer& buffer) {
 	auto msg = msg::Erase::parse(buffer);
 	std::scoped_lock loc{userActiveDocLock};
 	auto it = userActiveDoc.find(msg.token);
+	if (it == userActiveDoc.end()) {
+		return respondError(buffer, msg.header.version, "Erase error");
+	}
 	if (it->second->setCursorPos(msg.cursorPos)) {
 		it->second->erase(msg.eraseSize);
 		logger.log(logs::Level::INFO, "[", msg.cursorPos.X, ",", msg.cursorPos.Y, "] erased '", msg.eraseSize, "'");
@@ -154,6 +160,7 @@ Response Repository::registerUser(msg::Buffer& buffer) {
 }
 
 Response Repository::respondError(msg::Buffer& buffer, const int version, std::string&& errMsg) {
+	buffer.clear();
 	auto response = msg::ServerResponse<1>(msg::MessageType::error, 1, 1, { std::move(errMsg) });
 	response.serializeTo(buffer);
 	return { buffer, ResponseType::unicast };

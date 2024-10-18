@@ -12,13 +12,17 @@ Client::Client(std::string srvIp, const int srvPort, std::string logFile,
     doc(doc),
     terminal(terminal),
     logger(logFile),
-    msgProcessor(doc, terminal, logger) {
+    msgProcessor(doc, terminal, logger, userId) {
 
     client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (client == INVALID_SOCKET) {
         logger.log(logs::Level::ERROR, WSAGetLastError(), ": Error on creating client socket");
         closesocket(client);
     }
+}
+
+std::string Client::getUserId() {
+    return userId;
 }
 
 int Client::connectToServer() {

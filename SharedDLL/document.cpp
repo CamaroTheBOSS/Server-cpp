@@ -9,15 +9,7 @@ Document::Document() {
 }
 
 Document::Document(const std::string& text) {
-	std::vector<std::string> textData;
-	int offset = 0;
-	int endLinePos = 0;
-	while ((endLinePos = text.find('\n', offset)) != std::string::npos) {
-		textData.emplace_back(text.substr(offset, endLinePos - offset + 1));
-		offset = endLinePos + 1;
-	}
-	textData.emplace_back(text.substr(offset, text.size() - offset));
-	data = std::move(textData);
+	setText(text);
 }
 
 bool Document::setCursorPos(COORD newPos) {
@@ -46,6 +38,20 @@ std::string Document::getText() const {
 		text += line;
 	}
 	return text;
+}
+
+void Document::setText(const std::string& txt) {
+	std::vector<std::string> textData;
+	int offset = 0;
+	int endLinePos = 0;
+	while ((endLinePos = txt.find('\n', offset)) != std::string::npos) {
+		textData.emplace_back(txt.substr(offset, endLinePos - offset + 1));
+		offset = endLinePos + 1;
+	}
+	textData.emplace_back(txt.substr(offset, txt.size() - offset));
+	data = std::move(textData);
+	cursorPos = COORD{ 0, 0 };
+	offset = 0;
 }
 
 const std::vector<std::string>& Document::get() {

@@ -30,6 +30,7 @@ public:
 	COORD getCursorPos() const;
 	std::string getLine(const int lineIndex) const;
 	std::string getText() const;
+	void setText(const std::string& txt);
 	const std::vector<std::string>& get();
 
 private:

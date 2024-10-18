@@ -131,6 +131,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="command_executor.cpp" />
+    <ClCompile Include="command_executor.h" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="processor.cpp" />
     <ClCompile Include="tcp_client.cpp" />

@@ -6,25 +6,23 @@
 #include "terminal.h"
 
 void TerminalManager::setMode(Mode mode) const {
+    DWORD currMode;
+    DWORD features = (
+        ENABLE_LINE_INPUT |
+        ENABLE_ECHO_INPUT |
+        ENABLE_MOUSE_INPUT |
+        ENABLE_PROCESSED_INPUT |
+        ENABLE_QUICK_EDIT_MODE |
+        ENABLE_WINDOW_INPUT |
+        ENABLE_PROCESSED_OUTPUT
+        );
+    auto stdInput = GetStdHandle(STD_INPUT_HANDLE);
+    GetConsoleMode(stdInput, &currMode);
     if (mode == Mode::command) {
-
+        SetConsoleMode(stdInput, currMode & features);
     }
     else if (mode == Mode::document) {
-        DWORD currMode;
-        auto stdInput = GetStdHandle(STD_INPUT_HANDLE);
-        GetConsoleMode(stdInput, &currMode);
-        SetConsoleMode(
-            stdInput,
-            currMode & ~(
-                ENABLE_LINE_INPUT |
-                ENABLE_ECHO_INPUT |
-                ENABLE_MOUSE_INPUT |
-                ENABLE_PROCESSED_INPUT | 
-                ENABLE_QUICK_EDIT_MODE | 
-                ENABLE_WINDOW_INPUT |
-                ENABLE_PROCESSED_OUTPUT
-                )
-        );
+        SetConsoleMode(stdInput, currMode & ~features);
     }
     system("cls");
 }
